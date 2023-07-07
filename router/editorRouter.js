@@ -1558,7 +1558,6 @@ editorRouter.get("/domainInfo", async (req, res, next) => {
 //新增文章點擊率
 editorRouter.patch(
   "/editor/incrementPageview/:id",
-  verifyUser,
   getEditor,
   getIpInfo,
   async (req, res) => {

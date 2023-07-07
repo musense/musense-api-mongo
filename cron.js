@@ -4,19 +4,27 @@ require("dotenv").config();
 
 const LOCAL_DOMAIN = process.env.LOCAL_DOMAIN;
 
-new CronJob({
-  cronTime: "* * 0 * * *",
+const job = new CronJob({
+  cronTime: "0 5,10,15,20,25,30,35,40,45,50,55,0 * * * 1-5",
   onTick: async function () {
     try {
-      const response = await axios.delete(`${LOCAL_DOMAIN}tempEditor`);
-      console.log(response);
+      const response1 = await axios.patch(
+        `${LOCAL_DOMAIN}editor/checkSchedule`
+      );
+      const response2 = await axios.delete(`${LOCAL_DOMAIN}editor/cleanupIps`);
+      let now = new Date();
+      console.log(`${now}${response1.data.message}`);
+      console.log(`${now}${response2.data.message}`);
+      // this.stop();
     } catch (error) {
       console.error(error);
     }
   },
   onComplete: null,
-  start: false,
+  start: true,
   timezone: "Asia/Taipei",
 });
+// Use this if the 4th param is default value(false)
+job.start();
 // Use this if the 4th param is default value(false)
 // job.start();
