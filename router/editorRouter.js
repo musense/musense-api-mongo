@@ -1564,7 +1564,6 @@ editorRouter.patch(
     try {
       const editorId = res.editor._id;
       const ip = res.clientIp;
-      console.log(ip);
 
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
       const existingIp = await Ips.findOne({
