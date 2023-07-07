@@ -9,7 +9,7 @@ const job = new CronJob({
   onTick: async function () {
     try {
       const response1 = await axios.patch(
-        `${LOCAL_DOMAIN}editor/checkSchedule`
+        `${LOCAL_DOMAIN}editor/checkScheduleEditors`
       );
       const response2 = await axios.delete(`${LOCAL_DOMAIN}editor/cleanupIps`);
       let now = new Date();
