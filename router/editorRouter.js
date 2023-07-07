@@ -358,62 +358,58 @@ function parseHTML(req, res, next) {
 
 //後台編輯熱門文章用
 async function getNewPopularEditors() {
-  try {
-    const excludeEditor = await Categories.findOne({ name: "未分類" }).select(
-      "_id name"
-    );
-    // 1. 取 popular 不為空值的文章
-    const popularEditorsWithSorting = await Editor.find({
-      popularSorting: { $exists: true, $ne: null },
-      hidden: false,
-      draft: false,
-      categories: { $ne: excludeEditor._id },
-    }).select(
-      "_id serialNumber title publishedAt popularSorting pageView homeImagePath"
-    );
-    const sortingEditorIds = popularEditorsWithSorting.map(
-      (editor) => editor._id
+  const excludeEditor = await Categories.findOne({ name: "未分類" }).select(
+    "_id name"
+  );
+  // 1. 取 popular 不為空值的文章
+  const popularEditorsWithSorting = await Editor.find({
+    popularSorting: { $exists: true, $ne: null },
+    hidden: false,
+    draft: false,
+    categories: { $ne: excludeEditor._id },
+  }).select(
+    "_id serialNumber title publishedAt popularSorting pageView homeImagePath"
+  );
+  const sortingEditorIds = popularEditorsWithSorting.map(
+    (editor) => editor._id
+  );
+
+  // 2. 取前五名自然點閱率的熱門文章
+  let popularEditors = await Editor.find({
+    pageView: { $ne: null },
+    hidden: false,
+    draft: false,
+    _id: { $nin: sortingEditorIds },
+    categories: { $ne: excludeEditor._id },
+  })
+    .sort({ pageView: -1, publishedAt: -1 })
+    .limit(6)
+    .select(
+      "_id serialNumber title publishedAt pageView popularSorting homeImagePath"
     );
 
-    // 2. 取前五名自然點閱率的熱門文章
-    let popularEditors = await Editor.find({
-      pageView: { $ne: null },
-      hidden: false,
-      draft: false,
-      _id: { $nin: sortingEditorIds },
-      categories: { $ne: excludeEditor._id },
+  // 使用 map 替換 popularEditors 陣列中的元素
+  popularEditors = popularEditors.map((editor, index) => {
+    const popularEditor = popularEditorsWithSorting.find(
+      (editorWithPageView) => editorWithPageView.popularSorting === index
+    );
+    return popularEditor || editor;
+  });
+  const updatePopularEditors = await Promise.all(
+    popularEditors.map(async (editor) => {
+      const sitemapUrl = await Sitemap.findOne({
+        originalID: editor._id,
+        type: "editor",
+      });
+      if (sitemapUrl) {
+        editor = editor.toObject(); // convert mongoose document to plain javascript object
+        editor.sitemapUrl = sitemapUrl.url; // add url property
+      }
+      return editor;
     })
-      .sort({ pageView: -1, publishedAt: -1 })
-      .limit(6)
-      .select(
-        "_id serialNumber title publishedAt pageView popularSorting homeImagePath"
-      );
-
-    // 使用 map 替換 popularEditors 陣列中的元素
-    popularEditors = popularEditors.map((editor, index) => {
-      const popularEditor = popularEditorsWithSorting.find(
-        (editorWithPageView) => editorWithPageView.popularSorting === index
-      );
-      return popularEditor || editor;
-    });
-    const updatePopularEditors = await Promise.all(
-      popularEditors.map(async (editor) => {
-        const sitemapUrl = await Sitemap.findOne({
-          originalID: editor._id,
-          type: "editor",
-        });
-        if (sitemapUrl) {
-          editor = editor.toObject(); // convert mongoose document to plain javascript object
-          editor.sitemapUrl = sitemapUrl.url; // add url property
-        }
-        return editor;
-      })
-    );
-    // 傳回新的結果
-    return updatePopularEditors;
-  } catch (error) {
-    res.status(500).send({ message: error.message });
-  }
+  );
+  // 傳回新的結果
+  return updatePopularEditors;
 }
 
 async function getNewUnpopularEditors(skip, limit, name) {
