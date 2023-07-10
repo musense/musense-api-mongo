@@ -1711,13 +1711,19 @@ editorRouter.patch("/editor/checkScheduleEditors", async (req, res) => {
       },
     }).select("-content -htmlContent");
     let updateCount = 0;
+    let updatedIds = [];
     for (let editor of listEditor) {
       editor.hidden = false;
       await editor.save();
       updateCount++;
+      updatedIds.push(editor._id);
     }
 
-    res.status(200).send({ message: `Update ${updateCount} successfully` });
+    res.status(200).send({
+      message: `Successfully updated the following ids: ${updatedIds.join(
+        ", "
+      )}`,
+    });
   } catch (err) {
     res.status(400).send({ message: err.message });
   }
