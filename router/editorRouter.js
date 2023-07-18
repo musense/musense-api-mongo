@@ -1413,7 +1413,6 @@ editorRouter.get("/editor/searchUntop/:name", parseQuery, async (req, res) => {
 
     res.send(result);
   } catch (err) {
-    console.error(err);
     res.status(500).send({ message: err.message });
   }
 });
@@ -1548,7 +1547,6 @@ editorRouter.get("/tempEditor/:id", async (req, res, next) => {
 editorRouter.get("/domainInfo", async (req, res, next) => {
   try {
     const result = { domain: "http://10.88.0.103:3000" };
-    console.log("get domainInfo");
     res.status(200).send({ data: result });
   } catch (err) {
     return res.status(500).send({ message: err.message });

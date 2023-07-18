@@ -2,6 +2,7 @@ const express = require("express");
 const Tags = require("../model/tags");
 const Sitemap = require("../model/sitemap");
 const Editor = require("../model/editor");
+const logChanges = require("../logChanges.js");
 require("dotenv").config();
 
 const tagRouter = new express.Router();
@@ -383,6 +384,7 @@ tagRouter.post(
           });
           await newTagSitemap.save();
         }
+        await logChanges(req.method, newTag, Tags, "tag", req.session.user);
 
         res.status(201).json({
           newTag: newTag,
@@ -451,6 +453,16 @@ tagRouter.patch(
     if (headDescription) res.tag.headDescription = headDescription;
 
     try {
+      const originalTag = await Tags.findOne(res.tag._id);
+      await logChanges(
+        req.method,
+        res.tag,
+        Tags,
+        "tag",
+        req.session.user,
+        originalTag
+      );
+
       const updateTag = await res.tag.save();
       res.status(201).json({
         updateTag: updateTag,
@@ -472,7 +484,7 @@ tagRouter.delete("/tags/bunchDeleteByIds", verifyUser, async (req, res) => {
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ message: "Invalid data." });
     }
-    const existingTags = await Tags.find({ _id: { $in: ids } }).select("_id");
+    const existingTags = await Tags.find({ _id: { $in: ids } });
 
     if (existingTags.length !== ids.length) {
       return res
@@ -486,6 +498,15 @@ tagRouter.delete("/tags/bunchDeleteByIds", verifyUser, async (req, res) => {
     });
 
     await Editor.updateMany({}, { $pull: { tags: { $in: ids } } });
+
+    await logChanges(
+      req.method,
+      existingTags,
+      Tags,
+      "tag",
+      req.session.user,
+      existingTags
+    );
 
     const deleteTags = await Tags.deleteMany({
       _id: { $in: ids },
