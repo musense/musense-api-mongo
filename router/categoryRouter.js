@@ -2,6 +2,7 @@ const express = require("express");
 const Categories = require("../model/categories");
 const Sitemap = require("../model/sitemap");
 const Editor = require("../model/editor");
+const logChanges = require("../logChanges.js");
 require("dotenv").config();
 
 const categoryRouter = new express.Router();
@@ -385,6 +386,13 @@ categoryRouter.post(
         { _id: newCategory.id },
         { $set: { originalUrl: originalUrl } }
       );
+      await logChanges(
+        req.method,
+        newCategory,
+        Categories,
+        "category",
+        req.session.user
+      );
 
       res.status(201).json(newCategory);
     } catch (err) {
@@ -418,6 +426,14 @@ categoryRouter.patch(
     if (headDescription !== undefined)
       res.category.headDescription = headDescription;
     if (manualUrl !== undefined) res.category.manualUrl = manualUrl;
+    await logChanges(
+      req.method,
+      res.category,
+      Categories,
+      "category",
+      req.session.user,
+      true
+    );
 
     // console.log(res.category);
     try {
@@ -506,6 +522,14 @@ categoryRouter.delete(
           { $set: { upperCategory: null } }
         );
       }
+      await logChanges(
+        req.method,
+        existingCategories,
+        Categories,
+        "category",
+        req.session.user,
+        true
+      );
 
       const deleteSitemap = await Sitemap.deleteMany({
         originalID: { $in: ids },

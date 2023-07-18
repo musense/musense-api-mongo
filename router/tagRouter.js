@@ -460,7 +460,7 @@ tagRouter.patch(
         Tags,
         "tag",
         req.session.user,
-        originalTag
+        true
       );
 
       const updateTag = await res.tag.save();
@@ -505,7 +505,7 @@ tagRouter.delete("/tags/bunchDeleteByIds", verifyUser, async (req, res) => {
       Tags,
       "tag",
       req.session.user,
-      existingTags
+      true
     );
 
     const deleteTags = await Tags.deleteMany({
