@@ -271,7 +271,7 @@ tagRouter.get("/tags/tagSearch/:name", parseQuery, async (req, res) => {
 
   try {
     const tagData = await Tags.findOne({ name: tagName }).select("_id");
-    console.log(tagData);
+    // console.log(tagData);
     const editorsInTag = await Editor.find({
       tags: tagData._id,
     })
