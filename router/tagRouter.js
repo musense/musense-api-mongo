@@ -233,6 +233,37 @@ tagRouter.get("/tags", parseQuery, async (req, res) => {
   }
 });
 
+tagRouter.get("/tags/getPopularTags", async (req, res) => {
+  try {
+    const popularTagList = await Tags.find({
+      sorting: { $exists: true, $ne: null },
+      popular: true,
+    })
+      .select("name sorting popular createdAt")
+      .sort({ sorting: 1 })
+      .limit(10);
+
+    const updatePopularTagList = await Promise.all(
+      popularTagList.map(async (tag) => {
+        const sitemapUrl = await Sitemap.findOne({
+          originalID: tag._id,
+          type: "tag",
+        });
+        if (sitemapUrl) {
+          tag = tag.toObject(); // convert mongoose document to plain javascript object
+          tag.sitemapUrl = sitemapUrl.url; // add url property
+        }
+        return tag;
+      })
+    );
+
+    const result = { data: updatePopularTagList };
+    res.status(200).send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
 tagRouter.get("/tags/tagSearch/:name", parseQuery, async (req, res) => {
   const tagName = req.params.name;
   const { pageNumber, limit } = req.query;

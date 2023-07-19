@@ -426,17 +426,18 @@ categoryRouter.patch(
     if (headDescription !== undefined)
       res.category.headDescription = headDescription;
     if (manualUrl !== undefined) res.category.manualUrl = manualUrl;
-    await logChanges(
-      req.method,
-      res.category,
-      Categories,
-      "category",
-      req.session.user,
-      true
-    );
 
     // console.log(res.category);
     try {
+      await logChanges(
+        req.method,
+        res.category,
+        Categories,
+        "category",
+        req.session.user,
+        true
+      );
+
       const updateCategory = await res.category.save();
 
       //save URL & sitemap

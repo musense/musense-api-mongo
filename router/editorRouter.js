@@ -6,6 +6,7 @@ const Tags = require("../model/tags");
 const tempEditor = require("../model/tempEditor");
 const draftEditor = require("../model/draftEditor");
 const Ips = require("../model/ip");
+const Log = require("../model/changeLog");
 const multer = require("multer");
 const sharp = require("sharp");
 const fs = require("fs");
@@ -15,7 +16,7 @@ const { Text } = require("slate");
 const path = require("path");
 const url = require("url");
 const requestIp = require("request-ip");
-
+const logChanges = require("../logChanges");
 require("dotenv").config();
 
 const editorRouter = new express.Router();
@@ -1572,10 +1573,15 @@ editorRouter.patch(
 
       // If the IP has not made a request in the last hour, increment the page view and save the IP
       if (!existingIp) {
-        const article = await Editor.findOneAndUpdate(
+        const article = await Editor.findOne({ _id: editorId });
+        await Editor.updateOne(
           { _id: editorId },
           { $inc: { pageView: 1 } },
-          { new: true }
+          { timestamps: false }
+        );
+        await Tags.updateMany(
+          { _id: { $in: article.tags } },
+          { $inc: { pageView: 1 } }
         );
 
         const newIp = new Ips({
@@ -1608,6 +1614,20 @@ editorRouter.patch(
         { $set: { popularSorting: null } },
         { multi: true }
       );
+      const log = new Log({
+        httpMethod: "PATCH",
+        type: "editor",
+        userName: req.session.user,
+        changes: [
+          {
+            field: "popularSorting",
+            oldValue: "all manual setting value",
+            newValue: null,
+            changedAt: new Date(),
+          },
+        ],
+      });
+      await log.save();
 
       // 回傳更新筆數
       res.status(201).json({
@@ -1805,6 +1825,15 @@ editorRouter.patch(
     if (draft !== undefined) res.editor.draft = draft;
 
     try {
+      await logChanges(
+        req.method,
+        res.editor,
+        Editor,
+        "editor",
+        req.session.user,
+        true
+      );
+
       await res.editor.save();
       res.status(201).send({ message: "Editor update successfully" });
     } catch (err) {
@@ -1933,6 +1962,15 @@ editorRouter.post(
         const updateEditor = await Editor.findOne({ _id: newEditor.id })
           .populate({ path: "categories", select: "name" })
           .populate({ path: "tags", select: "name" });
+
+        await logChanges(
+          req.method,
+          newEditor,
+          Editor,
+          "editor",
+          req.session.user
+        );
+
         res.status(201).json({
           ...updateEditor._doc, // Spread operator to include all properties of newEditor
           sitemapUrl: newEditorSitemap.url,
@@ -2044,15 +2082,22 @@ editorRouter.delete(
         return res.status(400).json({ message: "Invalid data." });
       }
 
-      const existingEditors = await Editor.find({ _id: { $in: ids } }).select(
-        "_id"
-      );
+      const existingEditors = await Editor.find({ _id: { $in: ids } });
 
       if (existingEditors.length !== ids.length) {
         return res
           .status(400)
           .json({ message: "Some of the provided Editor IDs do not exist." });
       }
+
+      await logChanges(
+        req.method,
+        existingEditors,
+        Editor,
+        "editor",
+        req.session.user,
+        true
+      );
 
       const deleteSitemap = await Sitemap.deleteMany({
         originalID: { $in: ids },
