@@ -126,14 +126,18 @@ const checkStatus = function (next) {
     (!this.scheduledAt || this.scheduledAt <= now)
   ) {
     this.status = "隱藏文章";
-    this.publishedAt = now;
+    if (!this.publishedAt) {
+      this.publishedAt = now;
+    }
   } else if (
     !this.draft &&
     !this.hidden &&
     (!this.scheduledAt || this.scheduledAt <= now)
   ) {
     this.status = "已發布";
-    this.publishedAt = now;
+    if (!this.publishedAt) {
+      this.publishedAt = now;
+    }
   }
   next();
 };
