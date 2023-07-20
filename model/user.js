@@ -57,6 +57,20 @@ const userSchema = mongoose.Schema(
       trim: true,
       validate: validatePasswordMany,
     },
+    status: {
+      type: String,
+      enum: ["active", "inactive"],
+      default: "active",
+    },
+    role: {
+      type: String,
+      enum: ["user", "admin"],
+      default: "user",
+    },
+    remarks: {
+      type: String,
+      default: "",
+    },
   },
   {
     timestamps: true,

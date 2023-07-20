@@ -281,7 +281,6 @@ function parseHTML(req, res, next) {
     next();
     return;
   }
-
   const content = JSON.parse(contentJsonString);
 
   const serialize = (node) => {
@@ -293,6 +292,15 @@ function parseHTML(req, res, next) {
       if (node.hide) {
         string = `<span style="display: none;">${string}</span>`;
       }
+      if (node.italic) {
+        string = `<em>${string}</em>`;
+      }
+      if (node.underline) {
+        string = `<span style="text-decoration: underline;">${string}</span>`;
+      }
+      if (node.code) {
+        string = `<code>${string}</code>`;
+      }
       return string;
     }
 
@@ -303,21 +311,20 @@ function parseHTML(req, res, next) {
       case "quote":
         return `<blockquote><p>${children}</p></blockquote>`;
       case "paragraph":
-        return `<p${hideStyle}>${children}</p>`;
+        const hasCodeChild = node.children.some((child) => child.code);
+        if (hasCodeChild) {
+          return `<p class="code" ${hideStyle}>${children}</p>`;
+        } else {
+          return `<p${hideStyle}>${children}</p>`;
+        }
       case "block-quote":
         return `<blockquote>${children}</blockquote>`;
       case "h1":
-        return `<h1 ${hideStyle}"text-align: ${
-          node.align || "initial"
-        };"><strong>${children}</strong></h1>`;
+        return `<h1 ${hideStyle}><strong>${children}</strong></h1>`;
       case "h2":
-        return `<h2 ${hideStyle}"text-align: ${
-          node.align || "initial"
-        };"><strong>${children}</strong></h2>`;
+        return `<h2 ${hideStyle}><strong>${children}</strong></h2>`;
       case "h3":
-        return `<h3 ${hideStyle}"text-align: ${
-          node.align || "initial"
-        };"><strong>${children}</strong></h3>`;
+        return `<h3 ${hideStyle}><strong>${children}</strong></h3>`;
       case "list-item":
         return `<li>${children}</li>`;
       case "numbered-list":
@@ -333,7 +340,11 @@ function parseHTML(req, res, next) {
           : escapeHtml(node.alt);
         const srcAttribute = node.url ? `src="${escapeHtml(node.url)}"` : "";
         const altAttribute = node.alt ? `alt="${escapeHtml(node.alt)}"` : "";
-        return `<a ${hrefAttribute} title = ${titleAttribute} rel = "noopener noreferrer" target = "_blank"> <img ${srcAttribute} ${altAttribute}>${children}</img></a>`;
+        if (node.href) {
+          return `<a ${hrefAttribute} title = ${titleAttribute} rel = "noopener noreferrer" target = "_blank"> <img ${srcAttribute} ${altAttribute}>${children}</img></a>`;
+        } else {
+          return `<img ${srcAttribute} ${altAttribute}>${children}</img>`;
+        }
       case "link":
         return `<a target="_blank" rel="noopener noreferrer" href="${escapeHtml(
           node.url
@@ -349,7 +360,6 @@ function parseHTML(req, res, next) {
         return children;
     }
   };
-
   const htmlContent = content.map(serialize).join("");
 
   res.content = content;

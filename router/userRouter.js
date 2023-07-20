@@ -1,6 +1,7 @@
 const express = require("express");
 const User = require("../model/user");
 const bcrypt = require("bcrypt");
+const logChanges = require("../logChanges.js");
 const saltRounds = 10; // 8, 10, 12, 14
 
 const userRouter = new express.Router();
@@ -15,16 +16,15 @@ const verifyUser = (req, res, next) => {
 
 async function getUser(req, res, next) {
   const { username } = req.params;
-  console.log(`getUser req.params.username: ${req.params.username}`);
   let user;
   try {
     user = await User.findOne({ username });
     // return res.json(user)
-    if (user == undefined) {
+    if (user === undefined) {
       return res.status(404).json({ message: "can't find user!" });
     }
-  } catch (e) {
-    return res.status(500).send({ message: e.message });
+  } catch (err) {
+    return res.status(500).send({ message: err.message });
   }
   res.user = user;
   next();
@@ -58,28 +58,34 @@ userRouter.post("/login", async (req, res) => {
     }
 
     if (!user) {
-      return res.status(404).json({ message: "can't find user!" });
+      return res.status(404).json({ message: "can't find user or email!" });
     }
 
     let result = await bcrypt.compare(password, user.password);
     if (result) {
       req.session.isVerified = true;
       req.session.user = user.username;
+      req.session.role = user.role;
+      req.session.status = user.status;
       return res.status(200).json("login successful");
     } else {
-      return res.status(404).json({ message: "login failed" });
+      return res
+        .status(404)
+        .json({ message: "login failed: password not correct" });
     }
   } catch (err) {
-    // 處理錯誤，例如返回一個適當的錯誤響應
-    console.error(err);
-    res.status(500).json({ message: "Internal server error" });
+    res.status(500).json({ message: err.message });
   }
 });
 
 //logout
 userRouter.post("/logout", async (req, res) => {
-  req.session.destroy();
-  return res.send("You had been logout");
+  try {
+    req.session.destroy();
+    return res.status(201).json({ message: "You had been logout" });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // register
@@ -121,36 +127,55 @@ userRouter.post("/register", async (req, res) => {
     const registerUserSuccess = Object.assign({}, saveUser["_doc"], {
       errorMessage: "register successfully",
     });
-    console.log({ registerUserSuccess });
+    await logChanges(req.method, saveUser, User, "user", saveUser.username);
+
     res.status(201).json(registerUserSuccess);
-  } catch (e) {
-    res.status(500).send({ message: e.message });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
   }
 });
 
 // delete user account
 userRouter.delete("/user/:username", verifyUser, getUser, async (req, res) => {
   try {
+    await logChanges(
+      req.method,
+      res.user,
+      User,
+      "user",
+      req.session.user,
+      true
+    );
     await res.user.remove();
     res.json({ message: "Delete user successful!" });
-  } catch (e) {
-    res.status(500).send({ message: e.message });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
   }
 });
 
 // modify user account
 userRouter.patch("/user/:username", verifyUser, getUser, async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, status, role, remarks } = req.body;
   try {
-    const patchHash = await bcrypt.hash(password, saltRounds);
-    if (email != null) res.user.email = email;
-    if (password != null) res.user.password = patchHash;
-
-    // throw new Error('update error!!!')
-    const updateUser = await res.user.save();
-    res.json(updateUser);
-  } catch (e) {
-    res.status(500).send({ message: e.message });
+    if (email !== undefined) res.user.email = email;
+    if (password !== undefined)
+      res.user.password = await bcrypt.hash(password, saltRounds);
+    if (status !== undefined) res.user.status = status;
+    if (role !== undefined) res.user.role = role;
+    if (remarks !== undefined) res.user.remarks = remarks;
+    const originalUser = await User.findOne(res.user._id);
+    await logChanges(
+      req.method,
+      res.user,
+      User,
+      "user",
+      req.session.user,
+      originalUser
+    );
+    await res.user.save();
+    res.status(201).json({ message: "User information updated successfully" });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
   }
 });
 
