@@ -45,7 +45,6 @@ async function logChanges(
       userName: userName,
       changes: changes,
     });
-    console.log(userName);
     await log.save();
   } else if (method === "DELETE") {
     const log = new Logs({
