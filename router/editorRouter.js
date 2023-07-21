@@ -1626,6 +1626,7 @@ editorRouter.patch(
       );
       const log = new Log({
         httpMethod: "PATCH",
+        path: req.path,
         type: "editor",
         userName: req.session.user,
         changes: [
@@ -1837,6 +1838,7 @@ editorRouter.patch(
     try {
       await logChanges(
         req.method,
+        req.path,
         res.editor,
         Editor,
         "editor",
@@ -1975,6 +1977,7 @@ editorRouter.post(
 
         await logChanges(
           req.method,
+          req.path,
           newEditor,
           Editor,
           "editor",
@@ -2102,6 +2105,7 @@ editorRouter.delete(
 
       await logChanges(
         req.method,
+        req.path,
         existingEditors,
         Editor,
         "editor",

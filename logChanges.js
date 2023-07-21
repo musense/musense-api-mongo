@@ -3,6 +3,7 @@ const Logs = require("./model/changeLog.js");
 
 async function logChanges(
   method,
+  path,
   document,
   Model,
   type,
@@ -12,6 +13,7 @@ async function logChanges(
   if (method === "POST") {
     const log = new Logs({
       httpMethod: method,
+      path: path,
       documentId: document._id,
       type: type,
       version: document.__v,
@@ -39,6 +41,7 @@ async function logChanges(
     // Save the changes to another collection
     const log = new Logs({
       httpMethod: method,
+      path: path,
       documentId: document._id,
       type: type,
       version: document.__v,
@@ -49,6 +52,7 @@ async function logChanges(
   } else if (method === "DELETE") {
     const log = new Logs({
       httpMethod: method,
+      path: path,
       type: type,
       version: document.__v,
       userName: userName,

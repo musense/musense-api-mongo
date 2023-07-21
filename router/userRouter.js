@@ -67,7 +67,7 @@ userRouter.post("/login", async (req, res) => {
       req.session.user = user.username;
       req.session.role = user.role;
       req.session.status = user.status;
-      return res.status(200).json("login successful");
+      return res.status(200).json({ message: "login successful" });
     } else {
       return res
         .status(404)
@@ -127,7 +127,14 @@ userRouter.post("/register", async (req, res) => {
     const registerUserSuccess = Object.assign({}, saveUser["_doc"], {
       errorMessage: "register successfully",
     });
-    await logChanges(req.method, saveUser, User, "user", saveUser.username);
+    await logChanges(
+      req.method,
+      req.path,
+      saveUser,
+      User,
+      "user",
+      saveUser.username
+    );
 
     res.status(201).json(registerUserSuccess);
   } catch (err) {
@@ -140,6 +147,7 @@ userRouter.delete("/user/:username", verifyUser, getUser, async (req, res) => {
   try {
     await logChanges(
       req.method,
+      req.path,
       res.user,
       User,
       "user",
@@ -166,6 +174,7 @@ userRouter.patch("/user/:username", verifyUser, getUser, async (req, res) => {
     const originalUser = await User.findOne(res.user._id);
     await logChanges(
       req.method,
+      req.path,
       res.user,
       User,
       "user",

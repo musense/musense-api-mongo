@@ -388,6 +388,7 @@ categoryRouter.post(
       );
       await logChanges(
         req.method,
+        req.path,
         newCategory,
         Categories,
         "category",
@@ -431,6 +432,7 @@ categoryRouter.patch(
     try {
       await logChanges(
         req.method,
+        req.path,
         res.category,
         Categories,
         "category",
@@ -525,6 +527,7 @@ categoryRouter.delete(
       }
       await logChanges(
         req.method,
+        req.path,
         existingCategories,
         Categories,
         "category",

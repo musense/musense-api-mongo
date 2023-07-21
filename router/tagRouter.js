@@ -415,7 +415,14 @@ tagRouter.post(
           });
           await newTagSitemap.save();
         }
-        await logChanges(req.method, newTag, Tags, "tag", req.session.user);
+        await logChanges(
+          req.method,
+          req.path,
+          newTag,
+          Tags,
+          "tag",
+          req.session.user
+        );
 
         res.status(201).json({
           newTag: newTag,
@@ -487,6 +494,7 @@ tagRouter.patch(
       const originalTag = await Tags.findOne(res.tag._id);
       await logChanges(
         req.method,
+        req.path,
         res.tag,
         Tags,
         "tag",
@@ -532,6 +540,7 @@ tagRouter.delete("/tags/bunchDeleteByIds", verifyUser, async (req, res) => {
 
     await logChanges(
       req.method,
+      req.path,
       existingTags,
       Tags,
       "tag",

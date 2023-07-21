@@ -6,6 +6,10 @@ const logSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
+    path: {
+      type: String,
+      trim: true,
+    },
     documentId: {
       type: String,
       trim: true,
