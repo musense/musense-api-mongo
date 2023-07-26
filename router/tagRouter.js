@@ -3,19 +3,12 @@ const Tags = require("../model/tags");
 const Sitemap = require("../model/sitemap");
 const Editor = require("../model/editor");
 const logChanges = require("../logChanges.js");
+const verifyUser = require("../verifyUser");
 require("dotenv").config();
 
 const tagRouter = new express.Router();
 const domain = process.env.DOMAIN;
 const SUB_DOMAIN = process.env.SUB_DOMAIN;
-
-const verifyUser = (req, res, next) => {
-  if (req.session.isVerified) {
-    next();
-  } else {
-    return res.status(440).json({ message: "Please login first" });
-  }
-};
 
 async function getTag(req, res, next) {
   const id = req.params.id;
@@ -142,7 +135,7 @@ async function updateSorting(req, res, method, popular, next) {
 }
 
 //後台文章編輯時取出所有標籤與標籤管理頁面用
-tagRouter.get("/tags", parseQuery, async (req, res) => {
+tagRouter.get("/tags", verifyUser, parseQuery, async (req, res) => {
   const { startDate, endDate, pageNumber, limit } = req.query;
   const skip = pageNumber ? (pageNumber - 1) * limit : 0;
   const nameQuery = req.query.name;
@@ -233,7 +226,7 @@ tagRouter.get("/tags", parseQuery, async (req, res) => {
   }
 });
 
-tagRouter.get("/tags/getPopularTags", async (req, res) => {
+tagRouter.get("/tags/getPopularTags", verifyUser, async (req, res) => {
   try {
     const popularTagList = await Tags.find({
       sorting: { $exists: true, $ne: null },
@@ -264,57 +257,62 @@ tagRouter.get("/tags/getPopularTags", async (req, res) => {
   }
 });
 
-tagRouter.get("/tags/tagSearch/:name", parseQuery, async (req, res) => {
-  const tagName = req.params.name;
-  const { pageNumber, limit } = req.query;
-  const skip = pageNumber ? (pageNumber - 1) * limit : 0;
+tagRouter.get(
+  "/tags/tagSearch/:name",
+  verifyUser,
+  parseQuery,
+  async (req, res) => {
+    const tagName = req.params.name;
+    const { pageNumber, limit } = req.query;
+    const skip = pageNumber ? (pageNumber - 1) * limit : 0;
 
-  try {
-    const tagData = await Tags.findOne({ name: tagName }).select("_id");
-    // console.log(tagData);
-    const editorsInTag = await Editor.find({
-      tags: tagData._id,
-    })
-      .select("-content -htmlContent -createdAt")
-      .populate({ path: "categories", select: "name" })
-      .populate({ path: "tags", select: "name" })
-      .sort({ updatedAt: -1 })
-      .limit(limit)
-      .skip(skip);
-
-    const totalDocs = await Editor.countDocuments({
-      tags: tagData._id,
-    }).exec();
-
-    const updateEditorsInTag = await Promise.all(
-      editorsInTag.map(async (editor) => {
-        const sitemapUrl = await Sitemap.findOne({
-          originalID: editor._id,
-          type: "editor",
-        });
-        if (sitemapUrl) {
-          editor = editor.toObject(); // convert mongoose document to plain javascript object
-          editor.sitemapUrl = sitemapUrl.url; // add url property
-        }
-        return editor;
+    try {
+      const tagData = await Tags.findOne({ name: tagName }).select("_id");
+      // console.log(tagData);
+      const editorsInTag = await Editor.find({
+        tags: tagData._id,
       })
-    );
+        .select("-content -htmlContent -createdAt")
+        .populate({ path: "categories", select: "name" })
+        .populate({ path: "tags", select: "name" })
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .skip(skip);
 
-    const result = {
-      data: updateEditorsInTag,
-      totalCount: totalDocs,
-      totalPages: limit > 0 ? Math.ceil(totalDocs / limit) : 1,
-      limit: limit,
-      currentPage: pageNumber,
-    };
+      const totalDocs = await Editor.countDocuments({
+        tags: tagData._id,
+      }).exec();
 
-    res.status(200).send(result);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
+      const updateEditorsInTag = await Promise.all(
+        editorsInTag.map(async (editor) => {
+          const sitemapUrl = await Sitemap.findOne({
+            originalID: editor._id,
+            type: "editor",
+          });
+          if (sitemapUrl) {
+            editor = editor.toObject(); // convert mongoose document to plain javascript object
+            editor.sitemapUrl = sitemapUrl.url; // add url property
+          }
+          return editor;
+        })
+      );
+
+      const result = {
+        data: updateEditorsInTag,
+        totalCount: totalDocs,
+        totalPages: limit > 0 ? Math.ceil(totalDocs / limit) : 1,
+        limit: limit,
+        currentPage: pageNumber,
+      };
+
+      res.status(200).send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
   }
-});
+);
 
-tagRouter.get("/tags/:name", async (req, res) => {
+tagRouter.get("/tags/:name", verifyUser, async (req, res) => {
   try {
     const tagName = req.params.name;
 

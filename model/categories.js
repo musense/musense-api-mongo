@@ -22,6 +22,7 @@ const categoriesSchema = mongoose.Schema(
     },
     keyName: {
       type: String,
+      required: true,
       trim: true,
       unique: true,
     },

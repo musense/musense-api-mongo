@@ -2,17 +2,10 @@ const express = require("express");
 const User = require("../model/user");
 const bcrypt = require("bcrypt");
 const logChanges = require("../logChanges.js");
+const verifyUser = require("../verifyUser");
 const saltRounds = 10; // 8, 10, 12, 14
 
 const userRouter = new express.Router();
-
-const verifyUser = (req, res, next) => {
-  if (req.session.isVerified) {
-    next();
-  } else {
-    return res.status(404).json({ message: "Please login first" });
-  }
-};
 
 async function getUser(req, res, next) {
   const { username } = req.params;
@@ -67,6 +60,15 @@ userRouter.post("/login", async (req, res) => {
       req.session.user = user.username;
       req.session.role = user.role;
       req.session.status = user.status;
+      await logChanges(
+        req.method,
+        req.path,
+        user,
+        User,
+        "user",
+        req.session.user
+      );
+
       return res.status(200).json({ message: "login successful" });
     } else {
       return res

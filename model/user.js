@@ -77,6 +77,13 @@ const userSchema = mongoose.Schema(
   }
 );
 
+userSchema.methods.isUser = function () {
+  return this.role === "user";
+};
+userSchema.methods.isAdmin = function () {
+  return this.role === "admin";
+};
+
 const User = mongoose.model("user", userSchema);
 
 module.exports = User;

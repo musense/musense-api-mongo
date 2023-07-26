@@ -3,19 +3,12 @@ const Categories = require("../model/categories");
 const Sitemap = require("../model/sitemap");
 const Editor = require("../model/editor");
 const logChanges = require("../logChanges.js");
+const verifyUser = require("../verifyUser");
 require("dotenv").config();
 
 const categoryRouter = new express.Router();
 const domain = process.env.DOMAIN;
 const SUB_DOMAIN = process.env.SUB_DOMAIN;
-
-const verifyUser = (req, res, next) => {
-  if (req.session.isVerified) {
-    next();
-  } else {
-    return res.status(440).json({ message: "Please login first" });
-  }
-};
 
 async function parseCategoryName(req, res, next) {
   let categoryName = req.body.name;
@@ -36,6 +29,28 @@ async function parseCategoryName(req, res, next) {
   }
 
   res.name = categoryName;
+  next();
+}
+
+async function parseCategoryKeyName(req, res, next) {
+  let categoryKeyName = req.body.keyName;
+  let existingCategoryKeyName;
+
+  if (req.method === "POST" || (req.method === "PATCH" && categoryKeyName)) {
+    existingCategoryKeyName = await Categories.findOne({
+      keyName: categoryKeyName,
+    }).select("-_id keyName");
+  }
+  if (existingCategoryKeyName && req.method === "POST") {
+    res.status(400).send({ message: "The category key name already exists." });
+    return;
+  }
+  if (existingCategoryKeyName === null && req.method === "PATCH") {
+    res.status(400).send({ message: "The category doesn't exists." });
+    return;
+  }
+
+  res.keyName = existingCategoryKeyName;
   next();
 }
 
@@ -195,7 +210,7 @@ async function getCategory(req, res, next) {
 }
 
 //後台文章分類編輯處列出所有文章分類
-categoryRouter.get("/categories", parseQuery, async (req, res) => {
+categoryRouter.get("/categories", verifyUser, parseQuery, async (req, res) => {
   try {
     const { pageNumber, limit } = req;
     const skip = pageNumber ? (pageNumber - 1) * 10 : 0;
@@ -233,26 +248,31 @@ categoryRouter.get("/categories", parseQuery, async (req, res) => {
   }
 });
 
-categoryRouter.get("/searchCategory/:keyName", parseQuery, async (req, res) => {
-  const { pageNumber, limit } = req.query;
-  const keyName = req.params.keyName;
-  try {
-    const categoryInfo = await Categories.findOne({ keyName: keyName }).select(
-      "_id"
-    );
-    const result = await getSpecificClassifications(
-      categoryInfo._id,
-      limit,
-      pageNumber
-    );
+categoryRouter.get(
+  "/searchCategory/:keyName",
+  verifyUser,
+  parseQuery,
+  async (req, res) => {
+    const { pageNumber, limit } = req.query;
+    const keyName = req.params.keyName;
+    try {
+      const categoryInfo = await Categories.findOne({
+        keyName: keyName,
+      }).select("_id");
+      const result = await getSpecificClassifications(
+        categoryInfo._id,
+        limit,
+        pageNumber
+      );
 
-    res.status(200).send(result);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
+      res.status(200).send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
   }
-});
+);
 
-categoryRouter.get("/category/:keyName", async (req, res) => {
+categoryRouter.get("/category/:keyName", verifyUser, async (req, res) => {
   const categoryName = req.params.keyName;
   try {
     const categoryInfo = await Categories.findOne({
@@ -268,54 +288,62 @@ categoryRouter.get("/category/:keyName", async (req, res) => {
 });
 
 //Menubar列出上層文章分類與子分類
-categoryRouter.get("/categories/upper_category", async (req, res) => {
-  try {
-    const categories = await Categories.find().select("name upperCategory");
-    const upperCategories = {};
+categoryRouter.get(
+  "/categories/upper_category",
+  verifyUser,
+  async (req, res) => {
+    try {
+      const categories = await Categories.find().select("name upperCategory");
+      const upperCategories = {};
 
-    categories.forEach((category) => {
-      const upperCategory = category.upperCategory;
-      if (!upperCategories[upperCategory]) {
-        upperCategories[upperCategory] = [];
-      }
-      upperCategories[upperCategory].push({
-        _id: category._id,
-        name: category.name,
+      categories.forEach((category) => {
+        const upperCategory = category.upperCategory;
+        if (!upperCategories[upperCategory]) {
+          upperCategories[upperCategory] = [];
+        }
+        upperCategories[upperCategory].push({
+          _id: category._id,
+          name: category.name,
+        });
       });
-    });
 
-    const result = {
-      data: upperCategories,
-    };
+      const result = {
+        data: upperCategories,
+      };
 
-    res.send(result);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
   }
-});
+);
 
 //點選上層分類後列出子分類所有文章
-categoryRouter.get("/categories/:upperCategory", async (req, res) => {
-  const upperName = req.params.upperCategory;
-  try {
-    const categoriesName = await Categories.find({
-      upperCategory: upperName,
-    }).select("-_id name");
+categoryRouter.get(
+  "/categories/:upperCategory",
+  verifyUser,
+  async (req, res) => {
+    const upperName = req.params.upperCategory;
+    try {
+      const categoriesName = await Categories.find({
+        upperCategory: upperName,
+      }).select("-_id name");
 
-    const totalDocs = await Categories.countDocuments({
-      upperCategory: upperName,
-    }).exec();
+      const totalDocs = await Categories.countDocuments({
+        upperCategory: upperName,
+      }).exec();
 
-    const result = {
-      data: categoriesName,
-      totalCount: totalDocs,
-    };
+      const result = {
+        data: categoriesName,
+        totalCount: totalDocs,
+      };
 
-    res.status(200).send(result);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
+      res.status(200).send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
   }
-});
+);
 
 //新增文章分類
 categoryRouter.post(
@@ -323,6 +351,7 @@ categoryRouter.post(
   verifyUser,
   parseRequestBody,
   parseCategoryName,
+  parseCategoryKeyName,
   parseUpperCategory,
   async (req, res) => {
     const {
@@ -330,6 +359,7 @@ categoryRouter.post(
       headKeyword,
       headDescription,
       name,
+      keyName,
       upperCategory,
       manualUrl,
     } = res;
@@ -348,6 +378,7 @@ categoryRouter.post(
         headKeyword,
         headDescription,
         name,
+        keyName,
         upperCategory,
         manualUrl,
       });
@@ -407,6 +438,7 @@ categoryRouter.patch(
   verifyUser,
   parseRequestBody,
   parseCategoryName,
+  parseCategoryKeyName,
   parseUpperCategory,
   getCategory,
   async (req, res) => {
@@ -414,12 +446,14 @@ categoryRouter.patch(
       headTitle,
       headKeyword,
       headDescription,
-      // name,
+      name,
+      keyName,
       upperCategory,
       manualUrl,
     } = res;
 
-    // if (name) res.category.name = name;
+    if (name !== undefined) res.category.name = name;
+    if (keyName !== undefined) res.category.keyName = keyName;
     if (upperCategory !== undefined)
       res.category.upperCategory = upperCategory.name;
     if (headTitle !== undefined) res.category.headTitle = headTitle;

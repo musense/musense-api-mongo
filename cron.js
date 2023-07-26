@@ -24,7 +24,24 @@ const job = new CronJob({
   start: true,
   timezone: "Asia/Taipei",
 });
+const job2 = new CronJob({
+  cronTime: "0 0 0 1 * *",
+  onTick: async function () {
+    try {
+      const response2 = await axios.delete(
+        `${LOCAL_DOMAIN}logs/archive-and-delete-logs`
+      );
+      let now = new Date();
+      console.log(`${now}${response2.data.message}`);
+    } catch (error) {
+      console.error(error);
+    }
+  },
+  onComplete: null,
+  start: true,
+  timezone: "Asia/Taipei",
+});
+
 // Use this if the 4th param is default value(false)
 job.start();
-// Use this if the 4th param is default value(false)
-// job.start();
+job2.start();

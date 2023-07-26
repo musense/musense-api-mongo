@@ -59,7 +59,7 @@ app.use(
       // maxAge: new Date(253402300000000), // Approximately Friday, 31 Dec 9999 23:59:59 GMT
       httpOnly: true,
       domain: ".musense.tw",
-      expires: 28800000,
+      expires: 43200000,
     },
     maxAge: 28800000, // Approximately Friday, 31 Dec 9999 23:59:59 GMT
     saveUninitialized: false,
@@ -90,6 +90,7 @@ app.use(categoryRouter);
 app.use(userRouter);
 app.use(editorRouter);
 app.use(tagRouter);
+app.use(logRouter);
 
 // server.listen(4200)
 ssl.listen(PORT, () => {

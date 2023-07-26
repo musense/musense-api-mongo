@@ -17,6 +17,7 @@ const path = require("path");
 const url = require("url");
 const requestIp = require("request-ip");
 const logChanges = require("../logChanges");
+const verifyUser = require("../verifyUser");
 require("dotenv").config();
 
 const editorRouter = new express.Router();
@@ -25,15 +26,6 @@ const LOCAL_DOMAIN = process.env.LOCAL_DOMAIN;
 const SUB_DOMAIN = process.env.SUB_DOMAIN;
 
 //set session verify
-const verifyUser = (req, res, next) => {
-  if (req.session.isVerified) {
-    req.session.touch();
-    next();
-  } else {
-    return res.status(440).json({ message: "Please login first" });
-  }
-};
-
 function getIpInfo(req, res, next) {
   const clientIp = requestIp.getClientIp(req);
   res.clientIp = clientIp;
@@ -669,7 +661,7 @@ editorRouter.patch("/updateStatus", async (req, res) => {
 });
 
 //後台編輯文章處顯示用
-editorRouter.get("/editor", parseQuery, async (req, res) => {
+editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     const { pageNumber, limit } = req;
@@ -883,53 +875,59 @@ editorRouter.get("/editor", parseQuery, async (req, res) => {
 });
 
 //列出前後台熱門文章
-editorRouter.get("/editor/popular", parseQuery, async (req, res) => {
-  const { pageNumber, limit } = req;
-  const { popular: popularQueryParam } = req.query;
-  let popular;
+editorRouter.get(
+  "/editor/popular",
+  verifyUser,
+  parseQuery,
+  async (req, res) => {
+    const { pageNumber, limit } = req;
+    const { popular: popularQueryParam } = req.query;
+    let popular;
 
-  popular = parseInt(popularQueryParam, 10);
+    popular = parseInt(popularQueryParam, 10);
 
-  if (isNaN(popular) || popular < 0 || popular > 1) {
-    return res.status(400).send({ message: "Invalid popular parameter" });
-  }
-
-  const skip = pageNumber ? (pageNumber - 1) * limit : 0;
-
-  try {
-    //不論前後台顯示都是只顯示熱門的六筆
-    if (popular === 1) {
-      const PopularEditors = await getNewPopularEditors();
-      const totalDocs = PopularEditors.length;
-
-      const result = {
-        data: PopularEditors,
-        totalCount: totalDocs,
-      };
-
-      return res.status(200).json(result);
-    } else if (popular === 0) {
-      const { editors: nonPopularEditors, totalCount: totalDocs } =
-        await getNewUnpopularEditors(skip, limit);
-
-      const result = {
-        data: nonPopularEditors,
-        totalCount: totalDocs,
-        totalPages: Math.ceil(totalDocs / limit),
-        limit: limit,
-        currentPage: pageNumber,
-      };
-
-      return res.status(200).json(result);
+    if (isNaN(popular) || popular < 0 || popular > 1) {
+      return res.status(400).send({ message: "Invalid popular parameter" });
     }
-  } catch (err) {
-    res.status(500).send({ message: err.message });
+
+    const skip = pageNumber ? (pageNumber - 1) * limit : 0;
+
+    try {
+      //不論前後台顯示都是只顯示熱門的六筆
+      if (popular === 1) {
+        const PopularEditors = await getNewPopularEditors();
+        const totalDocs = PopularEditors.length;
+
+        const result = {
+          data: PopularEditors,
+          totalCount: totalDocs,
+        };
+
+        return res.status(200).json(result);
+      } else if (popular === 0) {
+        const { editors: nonPopularEditors, totalCount: totalDocs } =
+          await getNewUnpopularEditors(skip, limit);
+
+        const result = {
+          data: nonPopularEditors,
+          totalCount: totalDocs,
+          totalPages: Math.ceil(totalDocs / limit),
+          limit: limit,
+          currentPage: pageNumber,
+        };
+
+        return res.status(200).json(result);
+      }
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
   }
-});
+);
 
 //後台搜尋非熱門文章
 editorRouter.get(
   "/editor/searchUnpopular/:name",
+  verifyUser,
   parseQuery,
   async (req, res) => {
     try {
@@ -957,173 +955,179 @@ editorRouter.get(
 );
 
 //前後台列出推薦文章
-editorRouter.get("/editor/recommend", parseQuery, async (req, res) => {
-  const { pageNumber, limit } = req;
-  const { recommend: recommendQueryParam } = req.query;
-  const { home: homeQueryParam } = req.query;
-  let recommend;
-  let home;
-  let query = {
-    status: "已發布",
-  };
+editorRouter.get(
+  "/editor/recommend",
+  verifyUser,
+  parseQuery,
+  async (req, res) => {
+    const { pageNumber, limit } = req;
+    const { recommend: recommendQueryParam } = req.query;
+    const { home: homeQueryParam } = req.query;
+    let recommend;
+    let home;
+    let query = {
+      status: "已發布",
+    };
 
-  if (recommendQueryParam === undefined) {
-    recommend = undefined;
-    // Do nothing, just pass the control to the next handler
-  } else {
-    recommend = parseInt(recommendQueryParam, 10);
+    if (recommendQueryParam === undefined) {
+      recommend = undefined;
+      // Do nothing, just pass the control to the next handler
+    } else {
+      recommend = parseInt(recommendQueryParam, 10);
 
-    if (isNaN(recommend) || recommend < 0 || recommend > 1) {
-      return res.status(400).send({ message: "Invalid recommend parameter" });
-    }
-  }
-
-  if (homeQueryParam === undefined) {
-    home = undefined;
-    // Do nothing, just pass the control to the next handler
-  } else {
-    home = parseInt(homeQueryParam, 10);
-
-    if (isNaN(home) || home !== 1) {
-      return res.status(400).send({ message: "Invalid home parameter" });
-    }
-  }
-
-  switch (recommend) {
-    case 1:
-      query.recommendSorting = { $ne: null };
-      break;
-    case 0:
-      query.recommendSorting = null;
-      break;
-  }
-
-  const skip = pageNumber ? (pageNumber - 1) * limit : 0;
-
-  try {
-    if (home === 1) {
-      if (recommend !== undefined) {
-        return res.status(400).json({
-          message: `Invalid parameter, cannot use "home" and "recommend" parameter in the same time`,
-        });
+      if (isNaN(recommend) || recommend < 0 || recommend > 1) {
+        return res.status(400).send({ message: "Invalid recommend parameter" });
       }
-      const allItems = await Editor.aggregate([
-        {
-          $sort: { publishedAt: -1 },
-        },
-        {
-          $match: {
-            $and: [
-              { status: "已發布" },
-              // { recommendSorting: { $ne: null } },
-              // { recommendSorting: { $exists: true } },
-            ],
+    }
+
+    if (homeQueryParam === undefined) {
+      home = undefined;
+      // Do nothing, just pass the control to the next handler
+    } else {
+      home = parseInt(homeQueryParam, 10);
+
+      if (isNaN(home) || home !== 1) {
+        return res.status(400).send({ message: "Invalid home parameter" });
+      }
+    }
+
+    switch (recommend) {
+      case 1:
+        query.recommendSorting = { $ne: null };
+        break;
+      case 0:
+        query.recommendSorting = null;
+        break;
+    }
+
+    const skip = pageNumber ? (pageNumber - 1) * limit : 0;
+
+    try {
+      if (home === 1) {
+        if (recommend !== undefined) {
+          return res.status(400).json({
+            message: `Invalid parameter, cannot use "home" and "recommend" parameter in the same time`,
+          });
+        }
+        const allItems = await Editor.aggregate([
+          {
+            $sort: { publishedAt: -1 },
           },
-        },
-        {
-          $addFields: {
-            sort: {
-              $cond: [
-                { $eq: ["$recommendSorting", null] },
-                Number.MAX_VALUE,
-                "$recommendSorting",
+          {
+            $match: {
+              $and: [
+                { status: "已發布" },
+                // { recommendSorting: { $ne: null } },
+                // { recommendSorting: { $exists: true } },
               ],
             },
           },
-        },
-        {
-          $sort: { sort: 1 },
-        },
-        {
-          $facet: {
-            data: [
-              { $skip: skip },
-              { $limit: limit },
-              {
-                $project: {
-                  serialNumber: 1,
-                  title: 1,
-                  publishedAt: 1,
-                  recommendSorting: 1,
-                  homeImagePath: 1,
-                },
+          {
+            $addFields: {
+              sort: {
+                $cond: [
+                  { $eq: ["$recommendSorting", null] },
+                  Number.MAX_VALUE,
+                  "$recommendSorting",
+                ],
               },
-            ],
-            totalCount: [
-              {
-                $count: "count",
-              },
-            ],
+            },
           },
-        },
-      ]).exec();
+          {
+            $sort: { sort: 1 },
+          },
+          {
+            $facet: {
+              data: [
+                { $skip: skip },
+                { $limit: limit },
+                {
+                  $project: {
+                    serialNumber: 1,
+                    title: 1,
+                    publishedAt: 1,
+                    recommendSorting: 1,
+                    homeImagePath: 1,
+                  },
+                },
+              ],
+              totalCount: [
+                {
+                  $count: "count",
+                },
+              ],
+            },
+          },
+        ]).exec();
 
-      const [{ data, totalCount }] = allItems;
-      const totalDocs = totalCount[0] ? totalCount[0].count : 0;
-      const updateData = await Promise.all(
-        data.map(async (editor) => {
-          const sitemapUrl = await Sitemap.findOne({
-            originalID: editor._id,
-            type: "editor",
-          });
-          if (sitemapUrl) {
-            editor.sitemapUrl = sitemapUrl.url; // add url property
-          }
-          return editor;
-        })
-      );
+        const [{ data, totalCount }] = allItems;
+        const totalDocs = totalCount[0] ? totalCount[0].count : 0;
+        const updateData = await Promise.all(
+          data.map(async (editor) => {
+            const sitemapUrl = await Sitemap.findOne({
+              originalID: editor._id,
+              type: "editor",
+            });
+            if (sitemapUrl) {
+              editor.sitemapUrl = sitemapUrl.url; // add url property
+            }
+            return editor;
+          })
+        );
 
-      const result = {
-        data: updateData,
-        totalCount: totalDocs,
-        totalPages: Math.ceil(totalDocs / limit),
-        limit: limit,
-        currentPage: pageNumber,
-      };
+        const result = {
+          data: updateData,
+          totalCount: totalDocs,
+          totalPages: Math.ceil(totalDocs / limit),
+          limit: limit,
+          currentPage: pageNumber,
+        };
 
-      res.status(200).json(result);
-    } else {
-      const items = await Editor.find(query)
-        .sort({ recommendSorting: 1, publishedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select(
-          "_id serialNumber title publishedAt recommendSorting homeImagePath"
-        )
-        .exec();
-      const updateItems = await Promise.all(
-        items.map(async (editor) => {
-          const sitemapUrl = await Sitemap.findOne({
-            originalID: editor._id,
-            type: "editor",
-          });
-          if (sitemapUrl) {
-            editor = editor.toObject(); // convert mongoose document to plain javascript object
-            editor.sitemapUrl = sitemapUrl.url; // add url property
-          }
-          return editor;
-        })
-      );
+        res.status(200).json(result);
+      } else {
+        const items = await Editor.find(query)
+          .sort({ recommendSorting: 1, publishedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select(
+            "_id serialNumber title publishedAt recommendSorting homeImagePath"
+          )
+          .exec();
+        const updateItems = await Promise.all(
+          items.map(async (editor) => {
+            const sitemapUrl = await Sitemap.findOne({
+              originalID: editor._id,
+              type: "editor",
+            });
+            if (sitemapUrl) {
+              editor = editor.toObject(); // convert mongoose document to plain javascript object
+              editor.sitemapUrl = sitemapUrl.url; // add url property
+            }
+            return editor;
+          })
+        );
 
-      const totalDocs = await Editor.countDocuments(query).exec();
-      const result = {
-        data: updateItems,
-        totalCount: totalDocs,
-        totalPages: Math.ceil(totalDocs / limit),
-        limit: limit,
-        currentPage: pageNumber,
-      };
+        const totalDocs = await Editor.countDocuments(query).exec();
+        const result = {
+          data: updateItems,
+          totalCount: totalDocs,
+          totalPages: Math.ceil(totalDocs / limit),
+          limit: limit,
+          currentPage: pageNumber,
+        };
 
-      res.status(200).json(result);
+        res.status(200).json(result);
+      }
+    } catch (err) {
+      res.status(500).send({ message: err.message });
     }
-  } catch (err) {
-    res.status(500).send({ message: err.message });
   }
-});
+);
 
 //後台搜尋非推薦文章
 editorRouter.get(
   "/editor/searchUnrecommend/:name",
+  verifyUser,
   parseQuery,
   async (req, res) => {
     try {
@@ -1197,82 +1201,196 @@ editorRouter.get(
 );
 
 //前後台列出置頂與最新文章
-editorRouter.get("/editor/topAndNews", parseQuery, async (req, res) => {
-  const { pageNumber, limit } = req;
-  const { top: topQueryParam } = req.query;
-  const { home: homeQueryParam } = req.query;
+editorRouter.get(
+  "/editor/topAndNews",
+  verifyUser,
+  parseQuery,
+  async (req, res) => {
+    const { pageNumber, limit } = req;
+    const { top: topQueryParam } = req.query;
+    const { home: homeQueryParam } = req.query;
 
-  // const skip = (pageNumber - 1) * limit;
-  let top;
-  let home;
-  let query = { status: "已發布" };
+    // const skip = (pageNumber - 1) * limit;
+    let top;
+    let home;
+    let query = { status: "已發布" };
 
-  if (topQueryParam === undefined) {
-    top = undefined;
-    // Do nothing, just pass the control to the next handler
-  } else {
-    top = parseInt(topQueryParam, 10);
+    if (topQueryParam === undefined) {
+      top = undefined;
+      // Do nothing, just pass the control to the next handler
+    } else {
+      top = parseInt(topQueryParam, 10);
 
-    if (isNaN(top) || top < 0 || top > 1) {
-      return res.status(400).send({ message: "Invalid top parameter" });
-    }
-  }
-
-  if (homeQueryParam === undefined) {
-    home = undefined;
-    // Do nothing, just pass the control to the next handler
-  } else {
-    home = parseInt(homeQueryParam, 10);
-
-    if (isNaN(home) || home !== 1) {
-      return res.status(400).send({ message: "Invalid home parameter" });
-    }
-  }
-
-  switch (top) {
-    case 1:
-      query.topSorting = { $ne: null };
-      break;
-    case 0:
-      query.topSorting = null;
-      break;
-  }
-
-  const skip = pageNumber ? (pageNumber - 1) * limit : 0;
-
-  try {
-    if (home === 1) {
-      if (top !== undefined) {
-        return res.status(400).json({
-          message: `Invalid parameter, cannot use "home" and "recommend" parameter in the same time`,
-        });
+      if (isNaN(top) || top < 0 || top > 1) {
+        return res.status(400).send({ message: "Invalid top parameter" });
       }
-      const allItems = await Editor.aggregate([
+    }
+
+    if (homeQueryParam === undefined) {
+      home = undefined;
+      // Do nothing, just pass the control to the next handler
+    } else {
+      home = parseInt(homeQueryParam, 10);
+
+      if (isNaN(home) || home !== 1) {
+        return res.status(400).send({ message: "Invalid home parameter" });
+      }
+    }
+
+    switch (top) {
+      case 1:
+        query.topSorting = { $ne: null };
+        break;
+      case 0:
+        query.topSorting = null;
+        break;
+    }
+
+    const skip = pageNumber ? (pageNumber - 1) * limit : 0;
+
+    try {
+      if (home === 1) {
+        if (top !== undefined) {
+          return res.status(400).json({
+            message: `Invalid parameter, cannot use "home" and "recommend" parameter in the same time`,
+          });
+        }
+        const allItems = await Editor.aggregate([
+          {
+            $sort: { publishedAt: -1 },
+          },
+          {
+            $match: {
+              status: "已發布",
+            },
+          },
+          {
+            $addFields: {
+              sortTop: {
+                $cond: [
+                  { $eq: ["$topSorting", null] },
+                  Number.MAX_VALUE,
+                  "$topSorting",
+                ],
+              },
+            },
+          },
+          {
+            $sort: { sortTop: 1 },
+          },
+          {
+            $facet: {
+              data: [
+                { $skip: skip },
+                { $limit: limit },
+                {
+                  $project: {
+                    serialNumber: 1,
+                    title: 1,
+                    publishedAt: 1,
+                    topSorting: 1,
+                    homeImagePath: 1,
+                  },
+                },
+              ],
+              totalCount: [
+                {
+                  $count: "count",
+                },
+              ],
+            },
+          },
+        ]).exec();
+
+        const [{ data, totalCount }] = allItems;
+        const updateData = await Promise.all(
+          data.map(async (editor) => {
+            const sitemapUrl = await Sitemap.findOne({
+              originalID: editor._id,
+              type: "editor",
+            });
+            if (sitemapUrl) {
+              editor.sitemapUrl = sitemapUrl.url; // add url property
+            }
+            return editor;
+          })
+        );
+
+        const totalDocs = totalCount[0] ? totalCount[0].count : 0;
+
+        const result = {
+          data: updateData,
+          totalCount: totalDocs,
+          totalPages: Math.ceil(totalDocs / limit),
+          limit: limit,
+          currentPage: pageNumber,
+        };
+
+        res.status(200).json(result);
+      } else {
+        const items = await Editor.find(query)
+          .sort({ topSorting: 1, publishedAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .select("_id serialNumber title publishedAt topSorting homeImagePath")
+          .exec();
+
+        const totalDocs = await Editor.countDocuments(query).exec();
+        const updateItems = await Promise.all(
+          items.map(async (editor) => {
+            const sitemapUrl = await Sitemap.findOne({
+              originalID: editor._id,
+              type: "editor",
+            });
+            if (sitemapUrl) {
+              editor = editor.toObject(); // convert mongoose document to plain javascript object
+              editor.sitemapUrl = sitemapUrl.url; // add url property
+            }
+            return editor;
+          })
+        );
+
+        const result = {
+          data: updateItems,
+          totalCount: totalDocs,
+          totalPages: Math.ceil(totalDocs / limit),
+          limit: limit,
+          currentPage: pageNumber,
+        };
+
+        res.status(200).json(result);
+      }
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+//後台搜尋非置頂文章
+editorRouter.get(
+  "/editor/searchUntop/:name",
+  verifyUser,
+  parseQuery,
+  async (req, res) => {
+    try {
+      const name = req.params.name;
+      const { pageNumber, limit } = req;
+      const skip = pageNumber ? (pageNumber - 1) * limit : 0;
+
+      const aggregation = await Editor.aggregate([
+        {
+          $match: {
+            status: "已發布",
+            topSorting: null,
+            title: { $regex: name, $options: "i" },
+          },
+        },
         {
           $sort: { publishedAt: -1 },
         },
         {
-          $match: {
-            status: "已發布",
-          },
-        },
-        {
-          $addFields: {
-            sortTop: {
-              $cond: [
-                { $eq: ["$topSorting", null] },
-                Number.MAX_VALUE,
-                "$topSorting",
-              ],
-            },
-          },
-        },
-        {
-          $sort: { sortTop: 1 },
-        },
-        {
           $facet: {
-            data: [
+            findUntopEditors: [
               { $skip: skip },
               { $limit: limit },
               {
@@ -1280,56 +1398,104 @@ editorRouter.get("/editor/topAndNews", parseQuery, async (req, res) => {
                   serialNumber: 1,
                   title: 1,
                   publishedAt: 1,
-                  topSorting: 1,
+                  topdSorting: 1,
                   homeImagePath: 1,
                 },
               },
             ],
-            totalCount: [
-              {
-                $count: "count",
-              },
-            ],
+            totalCount: [{ $count: "count" }],
           },
         },
-      ]).exec();
+      ]);
 
-      const [{ data, totalCount }] = allItems;
-      const updateData = await Promise.all(
-        data.map(async (editor) => {
+      const findUntopEditors = aggregation[0].findUntopEditors;
+      const updateResult = await Promise.all(
+        findUntopEditors.map(async (editor) => {
           const sitemapUrl = await Sitemap.findOne({
             originalID: editor._id,
             type: "editor",
           });
           if (sitemapUrl) {
+            // editor = editor.toObject(); // convert mongoose document to plain javascript object
             editor.sitemapUrl = sitemapUrl.url; // add url property
           }
           return editor;
         })
       );
-
-      const totalDocs = totalCount[0] ? totalCount[0].count : 0;
+      const totalDocs =
+        aggregation[0].totalCount.length > 0
+          ? aggregation[0].totalCount[0].count
+          : 0;
 
       const result = {
-        data: updateData,
+        data: updateResult,
         totalCount: totalDocs,
         totalPages: Math.ceil(totalDocs / limit),
         limit: limit,
         currentPage: pageNumber,
       };
 
-      res.status(200).json(result);
-    } else {
-      const items = await Editor.find(query)
-        .sort({ topSorting: 1, publishedAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .select("_id serialNumber title publishedAt topSorting homeImagePath")
-        .exec();
+      res.send(result);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  }
+);
+// 後台編輯文章用 *get only title & _id field
+editorRouter.get("/editor/title", verifyUser, async (req, res) => {
+  try {
+    const editor = await Editor.find().select("title updatedAt");
+    // .limit(10)
+    res.send(editor);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
 
-      const totalDocs = await Editor.countDocuments(query).exec();
-      const updateItems = await Promise.all(
-        items.map(async (editor) => {
+editorRouter.get(
+  "/editor/relatedArticles/:id",
+  verifyUser,
+  async (req, res) => {
+    try {
+      const targetArticleId = req.params.id;
+      const targetArticle = await Editor.findOne({
+        _id: targetArticleId,
+      }).select("tags");
+      const targetTags = targetArticle.tags;
+
+      const relatedArticles = await Editor.find({
+        tags: { $in: targetTags },
+        _id: { $ne: targetArticleId },
+        statius: "已發布",
+      })
+        .select(
+          "title tags publishedAt hidden homeImagePath categories altText"
+        )
+        .populate({ path: "tags", select: "name" })
+        .populate({ path: "categories", select: "name" });
+      relatedArticles.forEach((article) => {
+        let commonTagsCount = 0;
+        article.tags.forEach((tag) => {
+          if (targetTags.includes(tag._id.toString())) {
+            commonTagsCount++;
+          }
+        });
+        article._doc.commonTagsCount = commonTagsCount;
+      });
+
+      // Sort related articles by the number of common tags in descending order
+      relatedArticles.sort((a, b) => {
+        if (b._doc.commonTagsCount === a._doc.commonTagsCount) {
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        } else {
+          return b._doc.commonTagsCount - a._doc.commonTagsCount;
+        }
+      });
+
+      const topRelatedArticles = relatedArticles.slice(0, 6);
+
+      const updateRelatedArticles = await Promise.all(
+        topRelatedArticles.map(async (editor) => {
           const sitemapUrl = await Sitemap.findOne({
             originalID: editor._id,
             type: "editor",
@@ -1342,201 +1508,60 @@ editorRouter.get("/editor/topAndNews", parseQuery, async (req, res) => {
         })
       );
 
-      const result = {
-        data: updateItems,
-        totalCount: totalDocs,
-        totalPages: Math.ceil(totalDocs / limit),
-        limit: limit,
-        currentPage: pageNumber,
-      };
-
-      res.status(200).json(result);
+      res.status(200).send({ data: updateRelatedArticles });
+    } catch (err) {
+      res.status(500).send({ message: err.message });
     }
-  } catch (err) {
-    res.status(500).json({ message: err.message });
   }
-});
+);
 
-//後台搜尋非置頂文章
-editorRouter.get("/editor/searchUntop/:name", parseQuery, async (req, res) => {
-  try {
-    const name = req.params.name;
-    const { pageNumber, limit } = req;
-    const skip = pageNumber ? (pageNumber - 1) * limit : 0;
-
-    const aggregation = await Editor.aggregate([
-      {
-        $match: {
-          status: "已發布",
-          topSorting: null,
-          title: { $regex: name, $options: "i" },
-        },
-      },
-      {
-        $sort: { publishedAt: -1 },
-      },
-      {
-        $facet: {
-          findUntopEditors: [
-            { $skip: skip },
-            { $limit: limit },
-            {
-              $project: {
-                serialNumber: 1,
-                title: 1,
-                publishedAt: 1,
-                topdSorting: 1,
-                homeImagePath: 1,
-              },
-            },
-          ],
-          totalCount: [{ $count: "count" }],
-        },
-      },
-    ]);
-
-    const findUntopEditors = aggregation[0].findUntopEditors;
-    const updateResult = await Promise.all(
-      findUntopEditors.map(async (editor) => {
-        const sitemapUrl = await Sitemap.findOne({
-          originalID: editor._id,
-          type: "editor",
-        });
-        if (sitemapUrl) {
-          // editor = editor.toObject(); // convert mongoose document to plain javascript object
-          editor.sitemapUrl = sitemapUrl.url; // add url property
-        }
-        return editor;
-      })
-    );
-    const totalDocs =
-      aggregation[0].totalCount.length > 0
-        ? aggregation[0].totalCount[0].count
-        : 0;
-
-    const result = {
-      data: updateResult,
-      totalCount: totalDocs,
-      totalPages: Math.ceil(totalDocs / limit),
-      limit: limit,
-      currentPage: pageNumber,
-    };
-
-    res.send(result);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-// 後台編輯文章用 *get only title & _id field
-editorRouter.get("/editor/title", async (req, res) => {
-  try {
-    const editor = await Editor.find().select("title updatedAt");
-    // .limit(10)
-    res.send(editor);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-
-editorRouter.get("/editor/relatedArticles/:id", async (req, res) => {
-  try {
-    const targetArticleId = req.params.id;
-    const targetArticle = await Editor.findOne({ _id: targetArticleId }).select(
-      "tags"
-    );
-    const targetTags = targetArticle.tags;
-
-    const relatedArticles = await Editor.find({
-      tags: { $in: targetTags },
-      _id: { $ne: targetArticleId },
-      statius: "已發布",
-    })
-      .select("title tags publishedAt hidden homeImagePath categories altText")
-      .populate({ path: "tags", select: "name" })
-      .populate({ path: "categories", select: "name" });
-    relatedArticles.forEach((article) => {
-      let commonTagsCount = 0;
-      article.tags.forEach((tag) => {
-        if (targetTags.includes(tag._id.toString())) {
-          commonTagsCount++;
-        }
+editorRouter.get(
+  "/editor/:id",
+  verifyUser,
+  getEditor,
+  async (req, res, next) => {
+    try {
+      const sitemapUrl = await Sitemap.findOne({
+        originalID: res.editor._id,
+        type: "editor",
       });
-      article._doc.commonTagsCount = commonTagsCount;
-    });
-
-    // Sort related articles by the number of common tags in descending order
-    relatedArticles.sort((a, b) => {
-      if (b._doc.commonTagsCount === a._doc.commonTagsCount) {
-        return new Date(b.createdAt) - new Date(a.createdAt);
-      } else {
-        return b._doc.commonTagsCount - a._doc.commonTagsCount;
+      if (sitemapUrl) {
+        res.editor = res.editor.toObject(); // convert mongoose document to plain javascript object
+        res.editor.sitemapUrl = sitemapUrl.url; // add url property
       }
-    });
 
-    const topRelatedArticles = relatedArticles.slice(0, 6);
-
-    const updateRelatedArticles = await Promise.all(
-      topRelatedArticles.map(async (editor) => {
-        const sitemapUrl = await Sitemap.findOne({
-          originalID: editor._id,
-          type: "editor",
+      if (res.editor.categories) {
+        const categoriesSitemap = await Sitemap.findOne({
+          originalID: res.editor.categories._id,
+          type: "category",
         });
-        if (sitemapUrl) {
-          editor = editor.toObject(); // convert mongoose document to plain javascript object
-          editor.sitemapUrl = sitemapUrl.url; // add url property
+        if (categoriesSitemap) {
+          res.editor.categories.sitemapUrl = categoriesSitemap.url;
         }
-        return editor;
-      })
-    );
-
-    res.status(200).send({ data: updateRelatedArticles });
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-
-editorRouter.get("/editor/:id", getEditor, async (req, res, next) => {
-  try {
-    const sitemapUrl = await Sitemap.findOne({
-      originalID: res.editor._id,
-      type: "editor",
-    });
-    if (sitemapUrl) {
-      res.editor = res.editor.toObject(); // convert mongoose document to plain javascript object
-      res.editor.sitemapUrl = sitemapUrl.url; // add url property
-    }
-
-    if (res.editor.categories) {
-      const categoriesSitemap = await Sitemap.findOne({
-        originalID: res.editor.categories._id,
-        type: "category",
-      });
-      if (categoriesSitemap) {
-        res.editor.categories.sitemapUrl = categoriesSitemap.url;
       }
-    }
 
-    if (res.editor.tags) {
-      res.editor.tags = await Promise.all(
-        res.editor.tags.map(async (tag) => {
-          const tagsSitemap = await Sitemap.findOne({
-            originalID: tag._id,
-            type: "tag",
-          });
-          if (tagsSitemap) {
-            tag = { ...tag, sitemapUrl: tagsSitemap.url };
-          }
-          return tag;
-        })
-      );
+      if (res.editor.tags) {
+        res.editor.tags = await Promise.all(
+          res.editor.tags.map(async (tag) => {
+            const tagsSitemap = await Sitemap.findOne({
+              originalID: tag._id,
+              type: "tag",
+            });
+            if (tagsSitemap) {
+              tag = { ...tag, sitemapUrl: tagsSitemap.url };
+            }
+            return tag;
+          })
+        );
+      }
+      res.status(200).send(res.editor);
+    } catch (err) {
+      res.status(500).send({ message: err.message });
     }
-    res.status(200).send(res.editor);
-  } catch (err) {
-    res.status(500).send({ message: err.message });
   }
-});
+);
 
-editorRouter.get("/tempEditor/:id", async (req, res, next) => {
+editorRouter.get("/tempEditor/:id", verifyUser, async (req, res, next) => {
   const id = req.params.id;
 
   let editor;
@@ -1555,7 +1580,7 @@ editorRouter.get("/tempEditor/:id", async (req, res, next) => {
   }
 });
 
-editorRouter.get("/domainInfo", async (req, res, next) => {
+editorRouter.get("/domainInfo", verifyUser, async (req, res, next) => {
   try {
     const result = { domain: "http://10.88.0.103:3000" };
     res.status(200).send({ data: result });
@@ -1747,12 +1772,17 @@ editorRouter.patch("/editor/checkScheduleEditors", async (req, res) => {
       updateCount++;
       updatedIds.push(editor._id);
     }
-
-    res.status(200).send({
-      message: `Successfully updated the following ids: ${updatedIds.join(
-        ", "
-      )}`,
-    });
+    if (updateCount === 0) {
+      res.status(200).send({
+        message: "No scheduled article need to update status",
+      });
+    } else {
+      res.status(200).send({
+        message: `Successfully updated the following ids: ${updatedIds.join(
+          ", "
+        )}`,
+      });
+    }
   } catch (err) {
     res.status(400).send({ message: err.message });
   }
