@@ -191,7 +191,7 @@ tagRouter.get("/tags", verifyUser, parseQuery, async (req, res) => {
   }
 
   const tagList = await Tags.find(query)
-    .sort({ sorting: 1, createdAt: -1 })
+    .sort({ sorting: -1, pageView: -1, createdAt: -1 })
     .skip(skip)
     .limit(limit);
 
