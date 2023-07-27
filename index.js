@@ -5,6 +5,7 @@ const editorRouter = require("./router/editorRouter");
 const userRouter = require("./router/userRouter");
 const sitemapRouter = require("./router/sitemapRouter");
 const categoryRouter = require("./router/categoryRouter");
+const logRouter = require("./router/logRouter");
 require("dotenv").config();
 require("./mongoose");
 const session = require("express-session");
