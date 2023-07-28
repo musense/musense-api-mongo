@@ -50,7 +50,7 @@ async function parseCategoryKeyName(req, res, next) {
     return;
   }
 
-  res.keyName = existingCategoryKeyName;
+  res.keyName = categoryKeyName;
   next();
 }
 
