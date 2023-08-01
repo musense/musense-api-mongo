@@ -297,32 +297,43 @@ function parseHTML(req, res, next) {
     }
 
     const children = node.children.map((n) => serialize(n)).join("");
-    const hideStyle = node.hide ? ' style="display: none;"' : "";
+
+    let style = node.hide ? "display: none;" : "";
+
+    if (node.align === "left") {
+      style += "text-align: left;";
+    } else if (node.align === "center") {
+      style += "text-align: center;";
+    } else if (node.align === "right") {
+      style += "text-align: right;";
+    } else if (node.align === "justify") {
+      style += "text-align: justify;";
+    }
 
     switch (node.type) {
       case "quote":
-        return `<blockquote><p>${children}</p></blockquote>`;
+        return `<blockquote style="${style}"><p>${children}</p></blockquote>`;
       case "paragraph":
         const hasCodeChild = node.children.some((child) => child.code);
         if (hasCodeChild) {
-          return `<p class="code" ${hideStyle}>${children}</p>`;
+          return `<p class="code" style="${style}">${children}</p>`;
         } else {
-          return `<p${hideStyle}>${children}</p>`;
+          return `<p style="${style}">${children}</p>`;
         }
       case "block-quote":
-        return `<blockquote>${children}</blockquote>`;
+        return `<blockquote style="${style}">${children}</blockquote>`;
       case "h1":
-        return `<h1 ${hideStyle}><strong>${children}</strong></h1>`;
+        return `<h1 style="${style}"><strong>${children}</strong></h1>`;
       case "h2":
-        return `<h2 ${hideStyle}><strong>${children}</strong></h2>`;
+        return `<h2 style="${style}"><strong>${children}</strong></h2>`;
       case "h3":
-        return `<h3 ${hideStyle}><strong>${children}</strong></h3>`;
+        return `<h3 style="${style}"><strong>${children}</strong></h3>`;
       case "list-item":
-        return `<li>${children}</li>`;
+        return `<li style="${style}">${children}</li>`;
       case "numbered-list":
-        return `<ol>${children}</ol>`;
+        return `<ol style="${style}">${children}</ol>`;
       case "bulleted-list":
-        return `<ul>${children}</ul>`;
+        return `<ul style="${style}">${children}</ul>`;
       case "image":
         const hrefAttribute = node.href
           ? `href="${escapeHtml(node.href)}"`
@@ -1566,12 +1577,8 @@ editorRouter.get("/tempEditor/:id", verifyUser, async (req, res, next) => {
 
   let editor;
   try {
-    editor = await tempEditor
-      .findOne({ _id: id })
-      .select("-pageView -topSorting -recommendSorting -popularSorting -__v")
-      .populate({ path: "categories", select: "name" })
-      .populate({ path: "tags", select: "name" });
-    if (editor == undefined) {
+    editor = await tempEditor.findOne({ _id: id }).select(" -__v");
+    if (editor === undefined) {
       return res.status(404).json({ message: "can't find editor!" });
     }
     res.status(200).send(editor);
@@ -2031,15 +2038,11 @@ editorRouter.post(
   uploadImage(),
   parseRequestBody,
   parseHTML,
-  parseTags,
-  parseCategories,
   async (req, res) => {
     const {
       title,
       content,
       htmlContent,
-      tags,
-      categories,
       headTitle,
       headKeyword,
       headDescription,
@@ -2048,18 +2051,21 @@ editorRouter.post(
       hidden,
     } = res;
 
+    const tagsArray = req.body.tags ? JSON.parse(req.body.tags) : undefined;
+    const tags = Array.isArray(tagsArray)
+      ? tagsArray.map((tag) => ({ name: tag.label }))
+      : undefined;
+    const categoriesArray = req.body.categories
+      ? JSON.parse(req.body.categories)
+      : undefined;
+    const categories = Array.isArray(categoriesArray)
+      ? categoriesArray.map((category) => ({ name: category.label }))
+      : undefined;
+
     const contentImagePath =
       req.files.contentImagePath && req.files.contentImagePath[0];
     const homeImagePath = req.files.homeImagePath && req.files.homeImagePath[0];
     try {
-      const contentFilename = contentImagePath
-        ? await processImage(contentImagePath, contentImagePath.originalname)
-        : null;
-
-      const homeFilename = homeImagePath
-        ? await processImage(homeImagePath, homeImagePath.originalname)
-        : null;
-
       const editorData = {
         title,
         content,
@@ -2074,20 +2080,28 @@ editorRouter.post(
         hidden,
       };
 
-      if (homeImagePath) {
-        //如果是修改原有文章
-        if (contentFilename.startsWith("http")) {
+      if (contentImagePath === undefined && homeImagePath === undefined) {
+        editorData.contentImagePath = null;
+        editorData.homeImagePath = null;
+      } else {
+        const contentFilename = contentImagePath
+          ? await processImage(contentImagePath, contentImagePath.originalname)
+          : null;
+
+        const homeFilename = homeImagePath
+          ? await processImage(homeImagePath, homeImagePath.originalname)
+          : null;
+        console.log(contentFilename);
+        console.log(homeFilename);
+        if (homeImagePath && homeFilename.startsWith("http")) {
+          editorData.homeImagePath = homeFilename;
+          editorData.contentImagePath = contentFilename;
+        } else {
           const newHomeUrl = copyFileAndGenerateNewUrl(homeFilename);
           const newContentUrl = copyFileAndGenerateNewUrl(contentFilename);
           editorData.homeImagePath = newHomeUrl;
           editorData.contentImagePath = newContentUrl;
-        } else {
-          editorData.homeImagePath = homeFilename;
-          editorData.contentImagePath = contentFilename;
         }
-      } else {
-        editorData.homeImagePath = `${LOCAL_DOMAIN}home/saved_image/homepage/${contentFilename}`;
-        editorData.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
       }
 
       const newTempEditor = new tempEditor(editorData);

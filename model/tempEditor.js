@@ -29,11 +29,7 @@ const tempEditorSchema = mongoose.Schema(
       trim: true,
       required: true,
     },
-    categories: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "categories",
-      trim: true,
-    },
+    categories: [{ name: { type: String, trim: true } }],
     originalUrl: {
       type: String,
       trim: true,
@@ -46,33 +42,10 @@ const tempEditorSchema = mongoose.Schema(
       type: String,
       trim: true,
     },
-    tags: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "tags",
-        trim: true,
-      },
-    ],
-    pageView: {
-      type: Number,
-      trim: true,
-      default: 0,
-    },
-    topSorting: {
-      type: Number,
-      trim: true,
-    },
+    tags: [{ name: { type: String, trim: true } }],
     hidden: {
       type: Boolean,
       default: false,
-    },
-    recommendSorting: {
-      type: Number,
-      trim: true,
-    },
-    popularSorting: {
-      type: Number,
-      trim: true,
     },
     homeImagePath: {
       type: String,
