@@ -2091,8 +2091,7 @@ editorRouter.post(
         const homeFilename = homeImagePath
           ? await processImage(homeImagePath, homeImagePath.originalname)
           : null;
-        console.log(contentFilename);
-        console.log(homeFilename);
+
         if (homeImagePath && homeFilename.startsWith("http")) {
           editorData.homeImagePath = homeFilename;
           editorData.contentImagePath = contentFilename;
