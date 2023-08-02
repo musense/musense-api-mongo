@@ -2097,10 +2097,7 @@ editorRouter.post(
           editorData.homeImagePath = homeFilename;
           editorData.contentImagePath = contentFilename;
         } else {
-          const newHomeUrl = copyFileAndGenerateNewUrl(homeFilename);
-          const newContentUrl = copyFileAndGenerateNewUrl(contentFilename);
-          editorData.homeImagePath = newHomeUrl;
-          editorData.contentImagePath = newContentUrl;
+          editorData.contentImagePath = `${LOCAL_DOMAIN}saved_image/content/${contentFilename}`;
         }
       }
 
@@ -2176,19 +2173,16 @@ editorRouter.delete(
   }
 );
 
-editorRouter.delete("/tempEditor", async (req, res) => {
+editorRouter.delete("/tempEditor", verifyUser, async (req, res) => {
   try {
     const deleteList = await tempEditor
       .find()
       .select("-_id contentImagePath homeImagePath");
 
     for (let doc of deleteList) {
-      if (doc.contentImagePath.startsWith("<iframe")) {
-        //Do nothing
-      } else {
+      if (!doc.homeImagePath && doc.contentImagePath) {
         // Delete contentImagePath
         let contentImagePath = url.parse(doc.contentImagePath).path;
-        let homeImagePath = url.parse(doc.homeImagePath).path;
 
         fs.unlink(contentImagePath, (err) => {
           if (err) {
@@ -2199,18 +2193,9 @@ editorRouter.delete("/tempEditor", async (req, res) => {
             console.log(`File ${doc.contentImagePath} was deleted`);
           }
         });
-
-        // Delete homeImagePath
-        fs.unlink(homeImagePath, (err) => {
-          if (err) {
-            console.log(`Error remove file ${homeImagePath}: ${err.message}`);
-          } else {
-            console.log(`File ${doc.homeImagePath} was deleted`);
-          }
-        });
       }
     }
-    // await tempEditor.deleteMany({});
+    await tempEditor.deleteMany({});
     res.status(200).send("Files were deleted successfully");
   } catch (err) {
     res.status(500).send({ message: err.message });

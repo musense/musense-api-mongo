@@ -63,7 +63,9 @@ async function updateSorting(req, res, method, popular, next) {
   const lastTag = await Tags.findOne().sort({ sorting: -1 });
   const maxSorting = lastTag ? lastTag.sorting + 1 : 1;
 
-  if (!desiredSorting && !popular) {
+  if (desiredSorting === 0) {
+    throw new Error("Invalid sorting number. It must be a positive integer.");
+  } else if (!desiredSorting && popular === false) {
     res.sorting = null;
     return;
   } else if (!desiredSorting && popular) {
@@ -347,7 +349,7 @@ tagRouter.post(
   verifyUser,
   async (req, res, next) => {
     try {
-      if (req.body.sorting && !req.body.popular) {
+      if (req.body.sorting && req.body.popular === false) {
         return res.status(400).send({
           message: "The 'popular' field must be set to true to update sorting.",
         });
@@ -447,8 +449,12 @@ tagRouter.patch(
           message: "The 'popular' field must be set to true to update sorting.",
         });
       }
-      await updateSorting(req, res, "PATCH", req.body.popular, next);
-      next();
+      if (req.body.sorting === undefined || req.body.popular === undefined) {
+        next();
+      } else {
+        await updateSorting(req, res, "PATCH", req.body.popular, next);
+        next();
+      }
     } catch (err) {
       res.status(500).send({ message: err.message });
     }
@@ -489,7 +495,6 @@ tagRouter.patch(
     if (headDescription) res.tag.headDescription = headDescription;
 
     try {
-      const originalTag = await Tags.findOne(res.tag._id);
       await logChanges(
         req.method,
         req.path,
@@ -542,8 +547,7 @@ tagRouter.delete("/tags/bunchDeleteByIds", verifyUser, async (req, res) => {
       existingTags,
       Tags,
       "tag",
-      req.session.user,
-      true
+      req.session.user
     );
 
     const deleteTags = await Tags.deleteMany({
