@@ -2057,13 +2057,13 @@ editorRouter.post(
 
     const tagsArray = req.body.tags ? JSON.parse(req.body.tags) : undefined;
     const tags = Array.isArray(tagsArray)
-      ? tagsArray.map((tag) => ({ name: tag.label }))
+      ? tagsArray.map((tag) => ({ name: tag.name }))
       : undefined;
     const categoriesArray = req.body.categories
       ? JSON.parse(req.body.categories)
       : undefined;
     const categories = Array.isArray(categoriesArray)
-      ? categoriesArray.map((category) => ({ name: category.label }))
+      ? categoriesArray.map((category) => ({ name: category.name }))
       : undefined;
 
     const contentImagePath =
