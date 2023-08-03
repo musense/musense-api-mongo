@@ -671,6 +671,10 @@ editorRouter.patch("/updateStatus", async (req, res) => {
   }
 });
 
+editorRouter.post("/editor/verifyUser", verifyUser, (req, res) => {
+  res.status(200).json({ message: "User is verified" });
+});
+
 //後台編輯文章處顯示用
 editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
   try {
