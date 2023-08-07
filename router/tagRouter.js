@@ -59,7 +59,7 @@ function parseQuery(req, res, next) {
 }
 
 async function updateSorting(req, res, method, popular, next) {
-  const desiredSorting = req.body.sorting;
+  const desiredSorting = parseInt(req.body.sorting, 10);
   const lastTag = await Tags.findOne().sort({ sorting: -1 });
   const maxSorting = lastTag ? lastTag.sorting + 1 : 1;
 
@@ -126,7 +126,11 @@ async function updateSorting(req, res, method, popular, next) {
       res.sorting = desiredSorting;
       return;
     } else if (!targetTag && !existingTag.sorting) {
-      res.sorting = maxSorting;
+      if (desiredSorting) {
+        res.sorting = desiredSorting;
+      } else {
+        res.sorting = maxSorting;
+      }
       return;
     } else if (!targetTag && existingTag.sorting) {
       res.sorting = desiredSorting;
@@ -135,6 +139,23 @@ async function updateSorting(req, res, method, popular, next) {
     next();
   }
 }
+
+tagRouter.get("/tags/getMaxTagNumber", verifyUser, async (req, res) => {
+  try {
+    let findMaxTagNumber = await Tags.findOne()
+      .sort({ sorting: -1 })
+      .select("-_id sorting");
+    let maxTagNumber;
+    if (!findMaxTagNumber) {
+      maxTagNumber = 1;
+    } else {
+      maxTagNumber = findMaxTagNumber.sorting + 1;
+    }
+    res.status(200).json({ maxTagNumber: maxTagNumber });
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
 
 //後台文章編輯時取出所有標籤與標籤管理頁面用
 tagRouter.get("/tags", verifyUser, parseQuery, async (req, res) => {
