@@ -799,27 +799,23 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
       })
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
 
       editorsQueryDraftEditor = draftEditor
         .find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     } else if (status === "草稿") {
       editorsQueryDraftEditor = draftEditor
         .find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     } else {
       editorsQueryEditor = Editor.find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     }
 
