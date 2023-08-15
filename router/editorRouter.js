@@ -171,20 +171,20 @@ async function parseCategories(req, res, next) {
     const categoriesMap = new Map();
 
     for (const category of categories) {
-      if (!categoriesMap.has(category.label)) {
+      if (!categoriesMap.has(category.name)) {
         const existingCategory = await Categories.findOne({
-          name: category.label,
+          name: category.name,
         });
 
         if (existingCategory) {
-          categoriesMap.set(category.label, existingCategory._id);
+          categoriesMap.set(category.name, existingCategory._id);
         } else {
           throw new Error("Category name error");
         }
       }
     }
     const categoriesArray = categories.map((category) =>
-      categoriesMap.get(category.label)
+      categoriesMap.get(category.name)
     );
 
     res.categories = categoriesArray;
@@ -209,6 +209,7 @@ async function parseTags(req, res, next) {
           ? null
           : JSON.parse(tagJsonString);
     }
+
     if (tags === null) {
       res.tags = [];
       return next();
@@ -225,11 +226,11 @@ async function parseTags(req, res, next) {
 
     for (const tag of tags) {
       if (tag.__isNew__ === true) {
-        const newTag = new Tags({ name: tag.label });
+        const newTag = new Tags({ name: tag.name });
         await newTag.save();
-        tagsMap.set(tag.label, newTag._id);
+        tagsMap.set(tag.name, newTag._id);
 
-        const newTagName = tag.label;
+        const newTagName = tag.name;
         const newTagUrl = `${SUB_DOMAIN}tag_${newTagName}.html`;
 
         const newTagSitemap = new Sitemap({
@@ -239,11 +240,11 @@ async function parseTags(req, res, next) {
         });
         await newTagSitemap.save();
       } else {
-        if (!tagsMap.has(tag.label)) {
-          const existingTag = await Tags.findOne({ name: tag.label });
+        if (!tagsMap.has(tag.name)) {
+          const existingTag = await Tags.findOne({ name: tag.name });
 
           if (existingTag) {
-            tagsMap.set(tag.label, existingTag._id);
+            tagsMap.set(tag.name, existingTag._id);
           } else {
             throw new Error("Tag name error");
           }
@@ -251,13 +252,12 @@ async function parseTags(req, res, next) {
       }
     }
 
-    const tagsArray = tags.map((tag) => tagsMap.get(tag.label));
+    const tagsArray = tags.map((tag) => tagsMap.get(tag.name));
 
     res.tags = tagsArray;
     next();
   } catch (error) {
     res.status(400).send({ message: error.message });
-    1;
   }
 }
 
@@ -278,6 +278,7 @@ function parseHTML(req, res, next) {
   const serialize = (node) => {
     if (Text.isText(node)) {
       let string = escapeHtml(node.text);
+      let textStyle = "";
       if (node.bold) {
         string = `<strong>${string}</strong>`;
       }
@@ -293,11 +294,20 @@ function parseHTML(req, res, next) {
       if (node.code) {
         string = `<code>${string}</code>`;
       }
+
+      if (node.color) {
+        textStyle += `color: ${escapeHtml(node.color)};`;
+      }
+      if (node.backgroundColor) {
+        textStyle += `background-color: ${escapeHtml(node.backgroundColor)};`;
+      }
+      if (textStyle) {
+        string = `<span style="${textStyle}">${string}</span>`;
+      }
       return string;
     }
 
     const children = node.children.map((n) => serialize(n)).join("");
-
     let style = node.hide ? "display: none;" : "";
 
     if (node.align === "left") {
@@ -309,6 +319,14 @@ function parseHTML(req, res, next) {
     } else if (node.align === "justify") {
       style += "text-align: justify;";
     }
+
+    const alignmentClasses = {
+      left: "left",
+      center: "center",
+      right: "right",
+    };
+
+    let classString = `class="${alignmentClasses[node.alignment] || ""}"`;
 
     switch (node.type) {
       case "quote":
@@ -328,6 +346,12 @@ function parseHTML(req, res, next) {
         return `<h2 style="${style}"><strong>${children}</strong></h2>`;
       case "h3":
         return `<h3 style="${style}"><strong>${children}</strong></h3>`;
+      case "table":
+        return `<table ${classString}><tbody>${children}</tbody></table>`;
+      case "table-row":
+        return `<tr ${classString}>${children}</tr>`;
+      case "table-cell":
+        return `<td ${classString}>${children}</td>`;
       case "list-item":
         return `<li style="${style}">${children}</li>`;
       case "numbered-list":
@@ -775,27 +799,27 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
       })
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ createdAt: -1 })
+        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
 
       editorsQueryDraftEditor = draftEditor
         .find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ createdAt: -1 })
+        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     } else if (status === "草稿") {
       editorsQueryDraftEditor = draftEditor
         .find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ createdAt: -1 })
+        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     } else {
       editorsQueryEditor = Editor.find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
-        .sort({ createdAt: -1 })
+        .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     }
 
@@ -888,6 +912,84 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
     res.status(500).send({ message: err.message });
   }
 });
+
+editorRouter.get(
+  "/editor/adjacentArticle/:id",
+  verifyUser,
+  async (req, res) => {
+    const id = req.params.id;
+    try {
+      const currentEditor = await Editor.findOne({ _id: id }).select(
+        "serialNumber"
+      );
+      if (!currentEditor) {
+        return res.status(404).send({ message: "Editor not found." });
+      }
+
+      const minSerialNumber = await Editor.findOne({ hidden: false })
+        .sort({ serialNumber: 1 })
+        .select("serialNumber");
+      const maxSerialNumber = await Editor.findOne({ hidden: false })
+        .sort({ serialNumber: -1 })
+        .select("serialNumber");
+
+      let previousEditor = null;
+      let nextEditor = null;
+
+      for (
+        let i = currentEditor.serialNumber - 1;
+        i >= minSerialNumber.serialNumber;
+        i--
+      ) {
+        previousEditor = await Editor.findOne({
+          serialNumber: i,
+          hidden: false,
+        }).select("title");
+
+        if (previousEditor) {
+          const sitemapUrl = await Sitemap.findOne({
+            originalID: previousEditor._id,
+            type: "editor",
+          });
+          if (sitemapUrl) {
+            previousEditor = previousEditor.toObject();
+            previousEditor.sitemapUrl = sitemapUrl.url;
+          }
+          break;
+        }
+      }
+
+      for (
+        let i = currentEditor.serialNumber + 1;
+        i <= maxSerialNumber.serialNumber;
+        i++
+      ) {
+        nextEditor = await Editor.findOne({
+          serialNumber: i,
+          hidden: false,
+        }).select("title");
+        if (nextEditor) {
+          const sitemapUrl = await Sitemap.findOne({
+            originalID: nextEditor._id,
+            type: "editor",
+          });
+          if (sitemapUrl) {
+            nextEditor = nextEditor.toObject();
+            nextEditor.sitemapUrl = sitemapUrl.url;
+          }
+          break;
+        }
+      }
+
+      res.status(200).json({
+        previousEditor: previousEditor,
+        nextEditor: nextEditor,
+      });
+    } catch (err) {
+      res.status(500).send({ message: err.message });
+    }
+  }
+);
 
 //列出前後台熱門文章
 editorRouter.get(
