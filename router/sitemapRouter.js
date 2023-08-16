@@ -82,7 +82,12 @@ sitemapRouter.get("/checkUrl/:url", async function (req, res) {
 
 sitemapRouter.get("/sitemap/getAllUrl", async function (req, res) {
   try {
-    const urlList = await Sitemap.find().select("-_id url");
+    const unCategorizedUrl = await Categories.findOne({
+      keyName: "Uncategorized",
+    });
+    const urlList = await Sitemap.find({
+      originalID: { $ne: unCategorizedUrl._id },
+    }).select("-_id url");
 
     res.status(200).json(urlList);
   } catch (err) {
