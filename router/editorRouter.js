@@ -2274,7 +2274,7 @@ editorRouter.delete(
   }
 );
 
-editorRouter.delete("/tempEditor", verifyUser, async (req, res) => {
+editorRouter.delete("/tempEditor", async (req, res) => {
   try {
     const deleteList = await tempEditor
       .find()

@@ -28,11 +28,12 @@ const job2 = new CronJob({
   cronTime: "0 0 0 1 * *",
   onTick: async function () {
     try {
-      const response2 = await axios.delete(
+      const response = await axios.delete(
         `${LOCAL_DOMAIN}logs/archive-and-delete-logs`
       );
+      await axios.delete(`${LOCAL_DOMAIN}tempEditor`);
       let now = new Date();
-      console.log(`${now}${response2.data.message}`);
+      console.log(`${now}${response.data.message}`);
     } catch (error) {
       console.error(error);
     }
