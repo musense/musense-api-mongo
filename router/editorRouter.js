@@ -721,9 +721,9 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
     let start;
     let end;
     // Try to get data from cache
-    getCache("editors", async (result) => {
-      if (result) {
-        return res.status(200).send(result);
+    getCache("editors", async (cachedResult) => {
+      if (cachedResult) {
+        return res.status(200).send(cachedResult);
       }
       if (startDate) {
         start = new Date(Number(startDate));
