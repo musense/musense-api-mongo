@@ -18,6 +18,12 @@ const url = require("url");
 const requestIp = require("request-ip");
 const logChanges = require("../logChanges");
 const verifyUser = require("../verifyUser");
+const {
+  setCache,
+  getCache,
+  clearCache,
+  updateCache,
+} = require("../redisCache");
 require("dotenv").config();
 
 const editorRouter = new express.Router();
@@ -714,196 +720,202 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
 
     let start;
     let end;
+    // Try to get data from cache
+    getCache("editors", async (result) => {
+      if (result) {
+        return res.status(200).send(result);
+      }
+      if (startDate) {
+        start = new Date(Number(startDate));
+        if (isNaN(start)) {
+          res.status(400).send({
+            message:
+              "Invalid startDate. It must be a valid date format or a timestamp.",
+          });
+          return;
+        }
+      }
 
-    if (startDate) {
-      start = new Date(Number(startDate));
-      if (isNaN(start)) {
+      if (endDate) {
+        end = new Date(Number(endDate));
+        if (isNaN(end)) {
+          res.status(400).send({
+            message:
+              "Invalid endDate. It must be a valid date format or a timestamp.",
+          });
+          return;
+        }
+      }
+
+      if (end && start && end <= start) {
         res.status(400).send({
-          message:
-            "Invalid startDate. It must be a valid date format or a timestamp.",
+          message: "End date cannot be smaller than or equal to start date.",
         });
         return;
       }
-    }
 
-    if (endDate) {
-      end = new Date(Number(endDate));
-      if (isNaN(end)) {
-        res.status(400).send({
-          message:
-            "Invalid endDate. It must be a valid date format or a timestamp.",
-        });
-        return;
+      if (titlesQuery) {
+        const titlesArray = titlesQuery.split(",");
+        const titleQueries = titlesArray.map((title) => ({
+          title: { $regex: title, $options: "i" },
+        }));
+        query.$or = titleQueries;
       }
-    }
 
-    if (end && start && end <= start) {
-      res.status(400).send({
-        message: "End date cannot be smaller than or equal to start date.",
-      });
-      return;
-    }
+      if (categoriesQuery) {
+        const category = await Categories.findOne({ name: categoriesQuery });
 
-    if (titlesQuery) {
-      const titlesArray = titlesQuery.split(",");
-      const titleQueries = titlesArray.map((title) => ({
-        title: { $regex: title, $options: "i" },
-      }));
-      query.$or = titleQueries;
-    }
-
-    if (categoriesQuery) {
-      const category = await Categories.findOne({ name: categoriesQuery });
-
-      if (!category) {
-        res.status(400).send({ message: "Invalid category name." });
-        return;
+        if (!category) {
+          res.status(400).send({ message: "Invalid category name." });
+          return;
+        }
+        query.categories = category._id;
       }
-      query.categories = category._id;
-    }
 
-    if (startDate && endDate) {
-      query.createdAt = { $gte: start, $lt: end };
-    } else if (startDate) {
-      start.setUTCHours(0, 0, 0, 0);
-      const end = new Date(start);
-      end.setDate(start.getDate() + 1);
-      query.createdAt = { $gte: start, $lt: end };
-    }
+      if (startDate && endDate) {
+        query.createdAt = { $gte: start, $lt: end };
+      } else if (startDate) {
+        start.setUTCHours(0, 0, 0, 0);
+        const end = new Date(start);
+        end.setDate(start.getDate() + 1);
+        query.createdAt = { $gte: start, $lt: end };
+      }
 
-    switch (status) {
-      case "全部":
-        query.status = { $in: ["草稿", "已排程", "已發布"] };
-        break;
-      case "草稿":
-        query.status = "草稿";
-        break;
-      case "已排程":
-        query.status = "已排程";
-        break;
-      case "隱藏文章":
-        query.status = "隱藏文章";
-        break;
-      case "已發布":
-        query.status = "已發布";
-        break;
-    }
+      switch (status) {
+        case "全部":
+          query.status = { $in: ["草稿", "已排程", "已發布"] };
+          break;
+        case "草稿":
+          query.status = "草稿";
+          break;
+        case "已排程":
+          query.status = "已排程";
+          break;
+        case "隱藏文章":
+          query.status = "隱藏文章";
+          break;
+        case "已發布":
+          query.status = "已發布";
+          break;
+      }
 
-    let editorsQueryEditor;
-    let editorsQueryDraftEditor;
+      let editorsQueryEditor;
+      let editorsQueryDraftEditor;
 
-    if (status === "全部") {
-      editorsQueryEditor = Editor.find({
-        ...query,
-        status: { $in: ["已排程", "已發布"] },
-      })
-        .populate({ path: "categories", select: "name" })
-        .populate({ path: "tags", select: "name" })
-        .select("-content -htmlContent");
+      if (status === "全部") {
+        editorsQueryEditor = Editor.find({
+          ...query,
+          status: { $in: ["已排程", "已發布"] },
+        })
+          .populate({ path: "categories", select: "name" })
+          .populate({ path: "tags", select: "name" })
+          .select("-content -htmlContent");
 
-      editorsQueryDraftEditor = draftEditor
-        .find(query)
-        .populate({ path: "categories", select: "name" })
-        .populate({ path: "tags", select: "name" })
-        .select("-content -htmlContent");
-    } else if (status === "草稿") {
-      editorsQueryDraftEditor = draftEditor
-        .find(query)
-        .populate({ path: "categories", select: "name" })
-        .populate({ path: "tags", select: "name" })
-        .select("-content -htmlContent");
-    } else {
-      editorsQueryEditor = Editor.find(query)
-        .populate({ path: "categories", select: "name" })
-        .populate({ path: "tags", select: "name" })
-        .select("-content -htmlContent");
-    }
+        editorsQueryDraftEditor = draftEditor
+          .find(query)
+          .populate({ path: "categories", select: "name" })
+          .populate({ path: "tags", select: "name" })
+          .select("-content -htmlContent");
+      } else if (status === "草稿") {
+        editorsQueryDraftEditor = draftEditor
+          .find(query)
+          .populate({ path: "categories", select: "name" })
+          .populate({ path: "tags", select: "name" })
+          .select("-content -htmlContent");
+      } else {
+        editorsQueryEditor = Editor.find(query)
+          .populate({ path: "categories", select: "name" })
+          .populate({ path: "tags", select: "name" })
+          .select("-content -htmlContent");
+      }
 
-    if (limit && limit > 0) {
+      if (limit && limit > 0) {
+        if (editorsQueryEditor) {
+          editorsQueryEditor.skip(skip).limit(limit);
+        }
+        if (editorsQueryDraftEditor) {
+          editorsQueryDraftEditor.skip(skip).limit(limit);
+        }
+      }
+
+      let editors = [];
       if (editorsQueryEditor) {
-        editorsQueryEditor.skip(skip).limit(limit);
+        editors = editors.concat(await editorsQueryEditor);
       }
       if (editorsQueryDraftEditor) {
-        editorsQueryDraftEditor.skip(skip).limit(limit);
+        editors = editors.concat(await editorsQueryDraftEditor);
       }
-    }
 
-    let editors = [];
-    if (editorsQueryEditor) {
-      editors = editors.concat(await editorsQueryEditor);
-    }
-    if (editorsQueryDraftEditor) {
-      editors = editors.concat(await editorsQueryDraftEditor);
-    }
+      let totalDocs = 0;
+      if (status === "全部") {
+        totalDocs += await Editor.countDocuments({
+          ...query,
+          status: { $in: ["已排程", "已發布"] },
+        }).exec();
+        totalDocs += await draftEditor.countDocuments(query).exec();
+      } else if (status === "草稿") {
+        totalDocs += await draftEditor.countDocuments(query).exec();
+      } else {
+        totalDocs += await Editor.countDocuments(query).exec();
+      }
 
-    let totalDocs = 0;
-    if (status === "全部") {
-      totalDocs += await Editor.countDocuments({
-        ...query,
-        status: { $in: ["已排程", "已發布"] },
-      }).exec();
-      totalDocs += await draftEditor.countDocuments(query).exec();
-    } else if (status === "草稿") {
-      totalDocs += await draftEditor.countDocuments(query).exec();
-    } else {
-      totalDocs += await Editor.countDocuments(query).exec();
-    }
+      const updateEditor = await Promise.all(
+        editors.map(async (editor) => {
+          const tagIds = editor.tags.map((tag) => tag._id);
 
-    const updateEditor = await Promise.all(
-      editors.map(async (editor) => {
-        const tagIds = editor.tags.map((tag) => tag._id);
+          const [categorySitemap, tagSitemaps] = await Promise.all([
+            Sitemap.findOne({
+              originalID: editor.categories._id,
+              type: "category",
+            }),
+            Sitemap.find({ originalID: { $in: tagIds }, type: "tag" }),
+          ]);
 
-        const [categorySitemap, tagSitemaps] = await Promise.all([
-          Sitemap.findOne({
-            originalID: editor.categories._id,
-            type: "category",
-          }),
-          Sitemap.find({ originalID: { $in: tagIds }, type: "tag" }),
-        ]);
+          const tagSitemapMap = new Map(
+            tagSitemaps.map((sitemap) => [
+              sitemap.originalID.toString(),
+              sitemap.url,
+            ])
+          );
 
-        const tagSitemapMap = new Map(
-          tagSitemaps.map((sitemap) => [
-            sitemap.originalID.toString(),
-            sitemap.url,
-          ])
-        );
+          editor = editor.toObject();
 
-        editor = editor.toObject();
+          if (categorySitemap) {
+            editor.categories = {
+              ...editor.categories,
+              sitemapUrl: categorySitemap.url,
+            };
+          }
 
-        if (categorySitemap) {
-          editor.categories = {
-            ...editor.categories,
-            sitemapUrl: categorySitemap.url,
-          };
-        }
+          editor.tags = editor.tags.map((tag) => ({
+            ...tag,
+            sitemapUrl: tagSitemapMap.get(tag._id.toString()),
+          }));
 
-        editor.tags = editor.tags.map((tag) => ({
-          ...tag,
-          sitemapUrl: tagSitemapMap.get(tag._id.toString()),
-        }));
+          const editorSitemap = await Sitemap.findOne({
+            originalID: editor._id,
+            type: "editor",
+          });
 
-        const editorSitemap = await Sitemap.findOne({
-          originalID: editor._id,
-          type: "editor",
-        });
+          if (editorSitemap) {
+            editor.sitemapUrl = editorSitemap.url;
+          }
 
-        if (editorSitemap) {
-          editor.sitemapUrl = editorSitemap.url;
-        }
+          return editor;
+        })
+      );
 
-        return editor;
-      })
-    );
+      const result = {
+        data: updateEditor,
+        totalCount: totalDocs,
+        totalPages: limit > 0 ? Math.ceil(totalDocs / limit) : 1,
+        limit: limit,
+        currentPage: pageNumber,
+      };
 
-    const result = {
-      data: updateEditor,
-      totalCount: totalDocs,
-      totalPages: limit > 0 ? Math.ceil(totalDocs / limit) : 1,
-      limit: limit,
-      currentPage: pageNumber,
-    };
-
-    res.status(200).send(result);
+      setCache("editors", result);
+      res.status(200).send(result);
+    });
   } catch (err) {
     res.status(500).send({ message: err.message });
   }
@@ -1986,6 +1998,7 @@ editorRouter.patch(
       );
 
       await res.editor.save();
+      clearCache("editors");
       res.status(201).send({ message: "Editor update successfully" });
     } catch (err) {
       res.status(400).send({ message: err.message });
@@ -2122,7 +2135,7 @@ editorRouter.post(
           "editor",
           req.session.user
         );
-
+        clearCache("editors");
         res.status(201).json({
           ...updateEditor._doc, // Spread operator to include all properties of newEditor
           sitemapUrl: newEditorSitemap.url,
@@ -2266,7 +2279,7 @@ editorRouter.delete(
       if (deleteEditor.deletedCount !== deleteSitemap.deletedCount) {
         return res.status(404).json({ message: "No matching sitemap found" });
       }
-
+      clearCache("editors");
       res.status(200).json({ message: "Delete editor successful!" });
     } catch (e) {
       res.status(500).send({ message: e.message });
