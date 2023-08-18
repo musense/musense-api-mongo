@@ -1,6 +1,6 @@
 // redisCache.js
 const redis = require("redis");
-const client = redis.createClient(); // 這裡可以傳入自定義的連接參數
+const client = redis.createClient({ host: "localhost", port: 6379 }); // 這裡可以傳入自定義的連接參數
 
 client.on("error", (error) => {
   console.error(error);
