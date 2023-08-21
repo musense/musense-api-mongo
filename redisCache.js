@@ -1,28 +1,33 @@
 // redisCache.js
 const redis = require("redis");
-const client = redis.createClient({ host: "localhost", port: 6379 }); // 這裡可以傳入自定義的連接參數
+const client = redis.createClient({ host: "127.0.0.1", port: 6379 }); // 這裡可以傳入自定義的連接參數
 
 client.on("error", (error) => {
   console.error(error);
 });
 
-const setCache = (key, value) => {
-  client.setex(key, 1800, JSON.stringify(value)); // 30 minutes
+async function connect() {
+  if (client.status !== "connecting" && client.status !== "ready") {
+    await client.connect();
+  }
+}
+connect();
+
+const setCache = async (key, value) => {
+  await client.set(key, JSON.stringify(value), { EX: 5 });
 };
 
-const getCache = (key, callback) => {
-  client.get(key, (err, result) => {
-    if (err) throw err;
-    callback(result ? JSON.parse(result) : null);
-  });
+const getCache = async (key) => {
+  const result = await client.get(key);
+  return result ? JSON.parse(result) : null;
 };
 
-const clearCache = (key) => {
-  client.del(key);
+const clearCache = async (key) => {
+  await client.del(key);
 };
 
-const updateCache = (key, value) => {
-  client.setex(key, 1800, JSON.stringify(value)); // Update value with 30 minutes expiration
+const updateCache = async (key, value) => {
+  await client.set(key, JSON.stringify(value), { EX: 1800 }); // Update value with 30 minutes expiration
 };
 
 module.exports = {
