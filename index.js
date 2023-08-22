@@ -21,13 +21,12 @@ const PORT = process.env.PORT || 5000;
 // const ssl
 const ssl = https.createServer(
   {
-    key: fs.readFileSync("/etc/letsencrypt/live/bd.zoonobet.com/privkey.pem", {
+    key: fs.readFileSync("/etc/letsencrypt/live/bd.musense.tw/privkey.pem", {
       encoding: "utf8",
     }),
-    cert: fs.readFileSync(
-      "/etc/letsencrypt/live/bd.zoonobet.com/fullchain.pem",
-      { encoding: "utf8" }
-    ),
+    cert: fs.readFileSync("/etc/letsencrypt/live/bd.musense.tw/fullchain.pem", {
+      encoding: "utf8",
+    }),
   },
   app
 );
