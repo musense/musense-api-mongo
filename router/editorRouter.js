@@ -2212,7 +2212,7 @@ editorRouter.post(
           editorData.homeImagePath = homeFilename;
           editorData.contentImagePath = contentFilename;
         } else {
-          editorData.contentImagePath = `${LOCAL_DOMAIN}saved_image/content/${contentFilename}`;
+          editorData.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
         }
       }
 
