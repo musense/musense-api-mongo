@@ -15,7 +15,7 @@ const https = require("https");
 
 const app = express();
 // const PORT = 4200
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 // const CorsOrgin
 // const corsOrgin = process.env.CORS_STR || "http://localhost:4200";
 // const ssl
