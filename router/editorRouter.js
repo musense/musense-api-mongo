@@ -30,6 +30,7 @@ const editorRouter = new express.Router();
 const domain = process.env.DOMAIN;
 const LOCAL_DOMAIN = process.env.LOCAL_DOMAIN;
 const SUB_DOMAIN = process.env.SUB_DOMAIN;
+const DBLOG_FILE_PATH = process.env.DBLOG_FILE_PATH;
 
 //set session verify
 function getIpInfo(req, res, next) {
@@ -2320,16 +2321,29 @@ editorRouter.delete("/editor/cleanupIps", async (req, res) => {
   try {
     // Get the current time minus one hour
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const oldLogs = await Ips.find({ createdAt: { $lt: oneHourAgo } }).select(
+      "-_id sourceIp relatedId createdAt"
+    );
+    if (oldLogs.length === 0) {
+      res.json({ message: "No data need to write" });
+    } else if (oldLogs.length > 0) {
+      // Write logs to a file
+      const timestamp = new Date(Date.now())
+        .toISOString()
+        .replace(/[^a-zA-Z0-9]/g, "-");
+      const filePath = path.join(DBLOG_FILE_PATH, `ipLogs_${timestamp}.json`);
+      fs.writeFileSync(filePath, JSON.stringify(oldLogs, null, 2));
 
-    // Find and remove all IPs that were created more than one hour ago
-    const result = await Ips.deleteMany({
-      createdAt: { $lt: oneHourAgo },
-    });
+      // Find and remove all IPs that were created more than one hour ago
+      await Ips.deleteMany({
+        createdAt: { $lt: oneHourAgo },
+      });
 
-    // Return the result of the operation
-    res.status(200).json({
-      message: `Deleted ${result.deletedCount} IP(s) that were created more than one hour ago.`,
-    });
+      // Return the result of the operation
+      res.status(200).json({
+        message: `Deleted ${oldLogs.length} IP(s) that were created more than one hour ago.`,
+      });
+    }
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

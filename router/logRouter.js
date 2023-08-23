@@ -20,7 +20,9 @@ logRouter.delete("/logs/archive-and-delete-logs", async (req, res) => {
       res.json({ message: "No data need to write" });
     } else if (oldLogs.length > 0) {
       // Write logs to a file
-      const timestamp = Date.now();
+      const timestamp = new Date(Date.now())
+        .toISOString()
+        .replace(/[^a-zA-Z0-9]/g, "-");
       const filePath = path.join(DBLOG_FILE_PATH, `oldLogs_${timestamp}.json`);
       fs.writeFileSync(filePath, JSON.stringify(oldLogs, null, 2));
 
