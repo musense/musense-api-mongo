@@ -233,12 +233,13 @@ async function parseTags(req, res, next) {
 
     for (const tag of tags) {
       if (tag.__isNew__ === true) {
-        const newTag = new Tags({ name: tag.name });
+        const newTagUrl = `${SUB_DOMAIN}tag_${tag.name}.html`;
+        const newTag = new Tags({
+          name: tag.name,
+          originalUrl: newTagUrl,
+        });
         await newTag.save();
         tagsMap.set(tag.name, newTag._id);
-
-        const newTagName = tag.name;
-        const newTagUrl = `${SUB_DOMAIN}tag_${newTagName}.html`;
 
         const newTagSitemap = new Sitemap({
           url: newTagUrl,
@@ -2328,11 +2329,8 @@ editorRouter.delete("/editor/cleanupIps", async (req, res) => {
       res.json({ message: "No data need to write" });
     } else if (oldLogs.length > 0) {
       // Write logs to a file
-      const timestamp = new Date(Date.now())
-        .toISOString()
-        .replace(/[^a-zA-Z0-9]/g, "-");
-      const filePath = path.join(DBLOG_FILE_PATH, `ipLogs_${timestamp}.json`);
-      fs.writeFileSync(filePath, JSON.stringify(oldLogs, null, 2));
+      const filePath = path.join(DBLOG_FILE_PATH, "ipLogs.json");
+      fs.appendFileSync(filePath, JSON.stringify(oldLogs, null, 2));
 
       // Find and remove all IPs that were created more than one hour ago
       await Ips.deleteMany({
