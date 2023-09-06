@@ -919,7 +919,7 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
       currentPage: pageNumber,
     };
 
-    setCache(cacheKey, result);
+    setCache(cacheKey, result, 5);
     res.status(200).send(result);
   } catch (err) {
     res.status(500).send({ message: err.message });

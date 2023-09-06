@@ -13,8 +13,8 @@ async function connect() {
 }
 connect();
 
-const setCache = async (key, value) => {
-  await client.set(key, JSON.stringify(value), { EX: 5 });
+const setCache = async (key, value, expired) => {
+  await client.set(key, JSON.stringify(value), { EX: expired });
 };
 
 const getCache = async (key) => {
