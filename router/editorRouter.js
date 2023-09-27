@@ -2290,54 +2290,93 @@ editorRouter.delete(
 );
 
 editorRouter.delete("/tempEditor", async (req, res) => {
+  const handleErrors = (res, error) => {
+    console.error(error);
+    res.status(500).json({ message: error.message });
+  };
   try {
-    const deleteList = await tempEditor
-      .find()
-      .select("-_id contentImagePath homeImagePath");
-
-    for (let doc of deleteList) {
-      if (!doc.homeImagePath && doc.contentImagePath) {
-        // Delete contentImagePath
-        let contentImagePath = url.parse(doc.contentImagePath).path;
-
-        fs.unlink(contentImagePath, (err) => {
-          if (err) {
-            console.log(
-              `Error remove file ${contentImagePath}: ${err.message}`
-            );
-          } else {
-            console.log(`File ${doc.contentImagePath} was deleted`);
-          }
-        });
-      }
-    }
-    await tempEditor.deleteMany({});
-    res.status(200).send("Files were deleted successfully");
-  } catch (err) {
-    res.status(500).send({ message: err.message });
-  }
-});
-
-editorRouter.delete("/editor/cleanupIps", async (req, res) => {
-  try {
-    // Get the current time minus one hour
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
     const oldLogs = await Ips.find({ createdAt: { $lt: oneHourAgo } }).select(
       "-_id sourceIp relatedId createdAt"
     );
+    const filePath = path.join(DBLOG_FILE_PATH, "ipLogs.json");
+    const outputFilePath = path.join(DBLOG_FILE_PATH, "no_duplicate_IP.json");
+
     if (oldLogs.length === 0) {
-      res.json({ message: "No data need to write" });
-    } else if (oldLogs.length > 0) {
-      // Write logs to a file
-      const filePath = path.join(DBLOG_FILE_PATH, "ipLogs.json");
-      fs.appendFileSync(filePath, JSON.stringify(oldLogs, null, 2));
+      res.status(200).json({ message: "No IP need to delete." });
+    } else {
+      const readAndValidateJSONFile = async (filePath) => {
+        return new Promise(async (resolve, reject) => {
+          let rawData = "";
+          const readStream = fs.createReadStream(filePath, {
+            encoding: "utf8",
+          });
+          readStream.on("data", (chunk) => (rawData += chunk));
+          readStream.on("end", () => {
+            try {
+              const jsonData = JSON.parse(rawData);
+              resolve(jsonData);
+            } catch (err) {
+              const splitContent = rawData.split("][");
+              const reformattedContent = "[" + splitContent.join("],[") + "]";
+              resolve(JSON.parse(reformattedContent));
+            }
+          });
+          readStream.on("error", reject);
+        });
+      };
 
-      // Find and remove all IPs that were created more than one hour ago
-      await Ips.deleteMany({
-        createdAt: { $lt: oneHourAgo },
-      });
+      const writeJSONFile = async (filePath, data) => {
+        const writeStream = fs.createWriteStream(filePath, {
+          encoding: "utf8",
+        });
+        const readableStream = Readable.from([JSON.stringify(data, null, 2)], {
+          encoding: "utf8",
+        });
 
-      // Return the result of the operation
+        try {
+          await pipelineAsync(readableStream, writeStream);
+        } catch (err) {
+          console.error("Pipeline failed:", err);
+        }
+      };
+
+      let existingData = [];
+      if (fs.existsSync(filePath)) {
+        existingData = await readAndValidateJSONFile(filePath);
+      }
+      const combinedData = existingData.concat(oldLogs);
+
+      await writeJSONFile(filePath, combinedData);
+
+      // Load existing no_duplicate_IP.json data if exists
+      let uniqueData = [];
+      if (fs.existsSync(outputFilePath)) {
+        uniqueData = await readAndValidateJSONFile(outputFilePath);
+      }
+
+      const uniqueSourceIps = new Set(uniqueData.map((log) => log.sourceIp));
+      // Create a set with unique sourceIps from existingData
+      const newUniqueSourceIps = new Set(
+        existingData.map((log) => log.sourceIp)
+      );
+
+      // Create an array to hold the truly unique logs to be appended to no_duplicate_IP.json
+      const trulyUniqueOldLogs = Array.from(newUniqueSourceIps)
+        .filter((sourceIp) => !uniqueSourceIps.has(sourceIp))
+        .map((sourceIp) => {
+          return { sourceIp }; // Replace this with the actual log object you want to store
+        });
+      // Filter out duplicate sourceIps from oldLogs
+      // const uniqueOldLogs = oldLogs.filter(
+      //   (log) => !uniqueSourceIps.has(log.sourceIp)
+      // );
+      // Write uniqueOldLogs to no_duplicate_IP.json
+      const combinedUniqueData = uniqueData.concat(trulyUniqueOldLogs);
+      await writeJSONFile(outputFilePath, combinedUniqueData);
+
+      await Ips.deleteMany({ createdAt: { $lt: oneHourAgo } });
+
       res.status(200).json({
         message: `Deleted ${oldLogs.length} IP(s) that were created more than one hour ago.`,
       });

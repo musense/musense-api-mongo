@@ -1,0 +1,32 @@
+version: 2.1
+
+jobs:
+  build:
+    docker:
+      - image: cimg/node:16.20
+    steps:
+      - checkout
+      - run: npm install
+
+  deploy:
+    machine:
+      enabled: true
+    steps:
+      - add_ssh_keys:
+          fingerprints:
+            - $VM_SSH_FINGERPRINT
+      - run:
+          name: Deploy to GCP Compute Engine
+          command: |
+            ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP "cd /home/dino_wu/musense-api-mongo/ && sudo git pull && sudo npm install && sudo pm2 restart 0 && sudo pm2 restart 1"
+
+workflows:
+  build-and-deploy:
+    jobs:
+      - build
+      - deploy:
+          requires:
+            - build
+          filters:
+            branches:
+              only: main
