@@ -18,12 +18,12 @@ const url = require("url");
 const requestIp = require("request-ip");
 const logChanges = require("../logChanges");
 const verifyUser = require("../verifyUser");
-const {
-  setCache,
-  getCache,
-  clearCache,
-  updateCache,
-} = require("../redisCache");
+const { setCache, getCache } = require("../redisCache");
+const { pipeline } = require("stream");
+const { promisify } = require("util");
+const pipelineAsync = promisify(pipeline);
+const { Readable } = require("stream");
+
 require("dotenv").config();
 
 const editorRouter = new express.Router();
