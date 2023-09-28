@@ -2290,6 +2290,35 @@ editorRouter.delete(
 );
 
 editorRouter.delete("/tempEditor", async (req, res) => {
+  try {
+    const deleteList = await tempEditor
+      .find()
+      .select("-_id contentImagePath homeImagePath");
+
+    for (let doc of deleteList) {
+      if (!doc.homeImagePath && doc.contentImagePath) {
+        // Delete contentImagePath
+        let contentImagePath = url.parse(doc.contentImagePath).path;
+
+        fs.unlink(contentImagePath, (err) => {
+          if (err) {
+            console.log(
+              `Error remove file ${contentImagePath}: ${err.message}`
+            );
+          } else {
+            console.log(`File ${doc.contentImagePath} was deleted`);
+          }
+        });
+      }
+    }
+    await tempEditor.deleteMany({});
+    res.status(200).send("Files were deleted successfully");
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
+editorRouter.delete("/editor/cleanupIps", async (req, res) => {
   const handleErrors = (res, error) => {
     console.error(error);
     res.status(500).json({ message: error.message });
@@ -2367,10 +2396,6 @@ editorRouter.delete("/tempEditor", async (req, res) => {
         .map((sourceIp) => {
           return { sourceIp }; // Replace this with the actual log object you want to store
         });
-      // Filter out duplicate sourceIps from oldLogs
-      // const uniqueOldLogs = oldLogs.filter(
-      //   (log) => !uniqueSourceIps.has(log.sourceIp)
-      // );
       // Write uniqueOldLogs to no_duplicate_IP.json
       const combinedUniqueData = uniqueData.concat(trulyUniqueOldLogs);
       await writeJSONFile(outputFilePath, combinedUniqueData);
@@ -2381,8 +2406,8 @@ editorRouter.delete("/tempEditor", async (req, res) => {
         message: `Deleted ${oldLogs.length} IP(s) that were created more than one hour ago.`,
       });
     }
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  } catch (error) {
+    handleErrors(res, error);
   }
 });
 
