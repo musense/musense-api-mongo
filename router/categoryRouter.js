@@ -379,7 +379,7 @@ categoryRouter.post(
         headDescription,
         name,
         keyName,
-        upperCategory,
+        upperCategory: upperCategory.name,
         manualUrl,
       });
 

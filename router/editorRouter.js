@@ -18,18 +18,20 @@ const url = require("url");
 const requestIp = require("request-ip");
 const logChanges = require("../logChanges");
 const verifyUser = require("../verifyUser");
-const { setCache, getCache } = require("../redisCache");
+const { setCache, getCache, scanAndDelete } = require("../redisCache");
 const { pipeline } = require("stream");
 const { promisify } = require("util");
 const pipelineAsync = promisify(pipeline);
 const { Readable } = require("stream");
-
 require("dotenv").config();
 
 const editorRouter = new express.Router();
+
 const domain = process.env.DOMAIN;
-const LOCAL_DOMAIN = process.env.LOCAL_DOMAIN;
 const SUB_DOMAIN = process.env.SUB_DOMAIN;
+const LOCAL_DOMAIN = process.env.LOCAL_DOMAIN;
+const IMG_CONTENT_PATH = process.env.IMG_CONTENT_PATH;
+const IMG_HOMEPAGE_PATH = process.env.IMG_HOMEPAGE_PATH;
 const DBLOG_FILE_PATH = process.env.DBLOG_FILE_PATH;
 
 //set session verify
@@ -52,6 +54,7 @@ function parseRequestBody(req, res, next) {
     recommendSorting,
     scheduledAt,
     draft,
+    htmlContent,
   } = req.body;
   if (req.method === "POST") {
     res.headTitle = headTitle !== undefined ? JSON.parse(headTitle) : null;
@@ -71,6 +74,8 @@ function parseRequestBody(req, res, next) {
     res.scheduledAt =
       scheduledAt !== undefined ? new Date(JSON.parse(scheduledAt)) : null;
     res.draft = draft !== undefined ? JSON.parse(draft) : false;
+    res.htmlContent =
+      htmlContent !== undefined ? JSON.parse(htmlContent) : null;
   }
   if (req.method === "PATCH") {
     res.headTitle =
@@ -127,6 +132,12 @@ function parseRequestBody(req, res, next) {
         : draft === false
         ? false
         : JSON.parse(draft);
+    res.htmlContent =
+      htmlContent === undefined
+        ? undefined
+        : htmlContent === null
+        ? null
+        : JSON.parse(htmlContent);
   }
   next();
 }
@@ -588,6 +599,7 @@ function uploadImage() {
   return upload.fields([
     { name: "homeImagePath", maxCount: 1 },
     { name: "contentImagePath", maxCount: 1 },
+    { name: "imageBlob", maxCount: 1 },
   ]);
 }
 
@@ -629,13 +641,11 @@ async function processImage(file, originalFilename) {
       extension;
 
     fs.writeFileSync(
-      // `C:/Users/user/Desktop/officail-website/UAT WEB/SIT_WEB_API/saved_image/content/${newFilename}`,
-      `/home/saved_image/content/${newFilename}`,
+      `${IMG_CONTENT_PATH}/${newFilename}`,
       compressedImage.data
     );
     fs.writeFileSync(
-      // `C:/Users/user/Desktop/officail-website/UAT WEB/SIT_WEB_API/saved_image/homepage/${newFilename}`,
-      `/home/saved_image/homepage/${newFilename}`,
+      `${IMG_HOMEPAGE_PATH}/${newFilename}`,
       compressedImage2.data
     );
     return newFilename;
@@ -645,30 +655,10 @@ async function processImage(file, originalFilename) {
   }
 }
 
-function copyFileAndGenerateNewUrl(originalUrl) {
-  // 從URL中獲取檔案路徑和檔名
-  const parsedUrl = url.parse(originalUrl);
-  const originalFilePath = parsedUrl.path;
-  const originalFileName = path.basename(originalFilePath);
-
-  // 產生新的檔名和路徑
-  const newFileName = `temp-file-${Date.now()}.jpg`; // 使用當前的時間戳生成唯一的新檔名
-  const newFilePath = path.join(path.dirname(originalFilePath), newFileName);
-
-  // 複製檔案
-  fs.copyFile(originalFilePath, newFilePath, (err) => {
-    if (err) throw err;
-    console.log(`${originalFileName} was copied to ${newFileName}`);
-  });
-
-  // 產生新的URL
-  const newUrl = new URL(
-    newFilePath,
-    `${parsedUrl.protocol}//${parsedUrl.host}`
-  ).toString();
-
-  return newUrl;
-}
+const extractFirstParagraph = (htmlContent) => {
+  const match = htmlContent.match(/<p.*?>(.*?)<\/p>/);
+  return match ? match[1] : "";
+};
 
 editorRouter.patch("/updateStatus", async (req, res) => {
   try {
@@ -714,9 +704,7 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
     const { pageNumber, limit } = req;
     const { status } = req.query;
     const skip = pageNumber ? (pageNumber - 1) * limit : 0;
-    const generateCacheKey = (query) => {
-      return "editors:" + JSON.stringify(query);
-    };
+
     const titlesQuery = req.query.title;
     const categoriesQuery = req.query.category;
 
@@ -725,12 +713,20 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
     let start;
     let end;
     // Try to get data from cache
+    const generateCacheKey = (query) => {
+      let objectTypeString = "editorList";
+      for (const [key, value] of Object.entries(query)) {
+        objectTypeString += `:${key}:${value}`;
+      }
+      return objectTypeString;
+    };
     const cacheKey = generateCacheKey(req.query);
 
     const cachedResult = await getCache(cacheKey);
     if (cachedResult) {
       return res.status(200).send(cachedResult);
     }
+
     if (startDate) {
       start = new Date(Number(startDate));
       if (isNaN(start)) {
@@ -815,23 +811,27 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
       })
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
+        // .sort({ serialNumber: -1 })
         .select("-content -htmlContent");
 
       editorsQueryDraftEditor = draftEditor
         .find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
+        // .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     } else if (status === "草稿") {
       editorsQueryDraftEditor = draftEditor
         .find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
+        // .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     } else {
       editorsQueryEditor = Editor.find(query)
         .populate({ path: "categories", select: "name" })
         .populate({ path: "tags", select: "name" })
+        // .sort({ updatedAt: -1 })
         .select("-content -htmlContent");
     }
 
@@ -867,13 +867,14 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
 
     const updateEditor = await Promise.all(
       editors.map(async (editor) => {
-        const tagIds = editor.tags.map((tag) => tag._id);
+        const tagIds = editor.tags ? editor.tags.map((tag) => tag._id) : [];
+        //JP站沒有分類
+        const categoryID = editor.categories ? editor.categories._id : null;
 
         const [categorySitemap, tagSitemaps] = await Promise.all([
-          Sitemap.findOne({
-            originalID: editor.categories._id,
-            type: "category",
-          }),
+          categoryID
+            ? Sitemap.findOne({ originalID: categoryID, type: "category" })
+            : null,
           Sitemap.find({ originalID: { $in: tagIds }, type: "tag" }),
         ]);
 
@@ -893,10 +894,12 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
           };
         }
 
-        editor.tags = editor.tags.map((tag) => ({
-          ...tag,
-          sitemapUrl: tagSitemapMap.get(tag._id.toString()),
-        }));
+        editor.tags = editor.tags
+          ? editor.tags.map((tag) => ({
+              ...tag,
+              sitemapUrl: tagSitemapMap.get(tag._id.toString()),
+            }))
+          : [];
 
         const editorSitemap = await Sitemap.findOne({
           originalID: editor._id,
@@ -919,7 +922,7 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
       currentPage: pageNumber,
     };
 
-    setCache(cacheKey, result, 5);
+    setCache(cacheKey, result, 60 * 60 * 12);
     res.status(200).send(result);
   } catch (err) {
     res.status(500).send({ message: err.message });
@@ -1750,6 +1753,7 @@ editorRouter.patch(
           relatedId: editorId,
         });
         await newIp.save();
+        await scanAndDelete();
 
         res.status(201).json({
           message: `Editor number:${article.serialNumber} page view count incremented`,
@@ -1903,6 +1907,7 @@ editorRouter.patch("/editor/checkScheduleEditors", async (req, res) => {
         message: "No scheduled article need to update status",
       });
     } else {
+      await scanAndDelete();
       res.status(200).send({
         message: `Successfully updated the following ids: ${updatedIds.join(
           ", "
@@ -1915,12 +1920,114 @@ editorRouter.patch("/editor/checkScheduleEditors", async (req, res) => {
 });
 
 editorRouter.patch(
+  "/draftEditor/:id",
+  uploadImage(),
+  verifyUser,
+  parseRequestBody,
+  parseTags,
+  parseCategories,
+  async (req, res) => {
+    const {
+      title,
+      tags,
+      htmlContent,
+      categories,
+      headTitle,
+      headKeyword,
+      headDescription,
+      manualUrl,
+      altText,
+      scheduledAt,
+      draft,
+    } = res;
+
+    let message = "";
+    if (scheduledAt) {
+      message +=
+        "Scheduled time has been set and cannot be for draft articles.\n";
+    }
+    if (draft !== true) {
+      message += "Non-draft articles.\n";
+    }
+    if (message) {
+      res.status(400).send({ message });
+    } else {
+      // As the "getEditor" function cannot accept query parameters but needs to be shared with GET, so need to perform a separate query to retrieve draft articles.
+      const id = req.params.id;
+      let editor = await draftEditor
+        .findOne({ _id: id })
+        .populate({ path: "categories", select: "name" })
+        .populate({ path: "tags", select: "name" });
+      if (editor == undefined) {
+        return res.status(404).json({ message: "can't find editor!" });
+      }
+      res.editor = editor;
+
+      const contentImagePath =
+        req.files.contentImagePath && req.files.contentImagePath[0];
+      const homeImagePath =
+        req.files.homeImagePath && req.files.homeImagePath[0];
+
+      const contentFilename = contentImagePath
+        ? await processImage(contentImagePath, contentImagePath.originalname)
+        : undefined;
+
+      const homeFilename = homeImagePath
+        ? await processImage(homeImagePath, homeImagePath.originalname)
+        : undefined;
+      if (contentFilename !== undefined) {
+        if (homeImagePath) {
+          res.editor.homeImagePath = homeFilename;
+          if (contentFilename === "") {
+            res.editor.contentImagePath = contentFilename;
+          } else {
+            const regex = /src="(https:\/\/www\.youtube\.com\/embed\/[^"]+)"/;
+            const match = contentFilename.match(regex);
+
+            if (match && match[1]) {
+              const youtubeUrl = match[1];
+              console.log(youtubeUrl);
+              res.editor.contentImagePath = youtubeUrl;
+            }
+          }
+        } else {
+          res.editor.homeImagePath = `${LOCAL_DOMAIN}saved_image/homepage/${contentFilename}`;
+          res.editor.contentImagePath = `${LOCAL_DOMAIN}saved_image/content/${contentFilename}`;
+        }
+      }
+      if (manualUrl !== undefined) {
+        res.editor.manualUrl = manualUrl;
+        await Sitemap.updateOne(
+          { originalID: res.editor._id, type: "editor" },
+          { $set: { url: `${domain}p_${manualUrl}.html` } }
+        );
+      }
+      if (tags !== undefined) res.editor.tags = [...tags];
+      if (categories !== undefined) res.editor.categories = categories;
+      if (title !== undefined) res.editor.title = title;
+      if (htmlContent !== undefined) res.editor.htmlContent = htmlContent;
+      if (headTitle !== undefined) res.editor.headTitle = headTitle;
+      if (headKeyword !== undefined) res.editor.headKeyword = headKeyword;
+      if (headDescription !== undefined)
+        res.editor.headDescription = headDescription;
+      if (altText !== undefined) res.editor.altText = altText;
+      if (draft !== undefined) res.editor.draft = draft;
+      try {
+        await res.editor.save();
+        res.status(200).send({ message: "Editor update successfully" });
+      } catch (err) {
+        res.status(400).send({ message: err.message });
+      }
+    }
+  }
+);
+
+editorRouter.patch(
   "/editor/:id",
   verifyUser,
   uploadImage(),
   parseRequestBody,
   parseTags,
-  parseHTML,
   parseCategories,
   getEditor,
   async (req, res) => {
@@ -1936,9 +2043,6 @@ editorRouter.patch(
       manualUrl,
       altText,
       hidden,
-      topSorting,
-      popularSorting,
-      recommendSorting,
       scheduledAt,
       draft,
     } = res;
@@ -1958,7 +2062,17 @@ editorRouter.patch(
     if (contentFilename !== undefined) {
       if (homeImagePath) {
         res.editor.homeImagePath = homeFilename;
-        res.editor.contentImagePath = contentFilename;
+        if (contentFilename === "") {
+          res.editor.contentImagePath = contentFilename;
+        } else {
+          const regex = /src="(https:\/\/www\.youtube\.com\/embed\/[^"]+)"/;
+          const match = contentFilename.match(regex);
+
+          if (match && match[1]) {
+            const youtubeUrl = match[1];
+            res.editor.contentImagePath = youtubeUrl;
+          }
+        }
       } else {
         res.editor.homeImagePath = `${LOCAL_DOMAIN}home/saved_image/homepage/${contentFilename}`;
         res.editor.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
@@ -2011,17 +2125,49 @@ editorRouter.patch(
 );
 
 editorRouter.post(
+  "/editor/getNewImagePath",
+  verifyUser,
+  uploadImage(),
+  async (req, res) => {
+    try {
+      let imageBlob = req.files.imageBlob && req.files.imageBlob[0];
+
+      if (imageBlob === undefined || imageBlob === null) {
+        return res.status(400).json({ error: "Empty image value" });
+      } else {
+        const imageFilename = imageBlob
+          ? await processImage(imageBlob, imageBlob.originalname)
+          : null;
+        if (imageFilename.startsWith("http")) {
+          const regex = /src="(https:\/\/www\.youtube\.com\/embed\/[^"]+)"/;
+          const match = imageFilename.match(regex);
+
+          if (match && match[1]) {
+            const youtubeUrl = match[1];
+            imageBlob = youtubeUrl;
+          }
+        } else {
+          imageBlob = `${LOCAL_DOMAIN}home/saved_image/content/${imageFilename}`;
+        }
+      }
+
+      res.status(201).json({ imageUrl: imageBlob });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+editorRouter.post(
   "/editor",
   verifyUser,
   uploadImage(),
   parseRequestBody,
-  parseHTML,
   parseTags,
   parseCategories,
   async (req, res) => {
     const {
       title,
-      content,
       htmlContent,
       tags,
       categories,
@@ -2049,7 +2195,7 @@ editorRouter.post(
     if (serialNumber === null) {
       message += "serialNumber is required\n";
     }
-    if (content === "") {
+    if (htmlContent === null) {
       message += "content is required\n";
     }
     if (draft === true) {
@@ -2063,10 +2209,9 @@ editorRouter.post(
         const editorData = {
           serialNumber: serialNumber + 1,
           title,
-          content,
           htmlContent,
           tags,
-          categories, //: category ? category._id : null,
+          categories,
           headTitle,
           headKeyword,
           headDescription,
@@ -2096,7 +2241,13 @@ editorRouter.post(
             : null;
           if (homeImagePath && homeFilename.startsWith("http")) {
             editorData.homeImagePath = homeFilename;
-            editorData.contentImagePath = contentFilename;
+            const regex = /src="(https:\/\/www\.youtube\.com\/embed\/[^"]+)"/;
+            const match = contentFilename.match(regex);
+
+            if (match && match[1]) {
+              const youtubeUrl = match[1];
+              editorData.contentImagePath = youtubeUrl;
+            }
           } else {
             editorData.homeImagePath = `${LOCAL_DOMAIN}home/saved_image/homepage/${contentFilename}`;
             editorData.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
@@ -2139,6 +2290,7 @@ editorRouter.post(
           "editor",
           req.session.user
         );
+        await scanAndDelete();
         res.status(201).json({
           ...updateEditor._doc, // Spread operator to include all properties of newEditor
           sitemapUrl: newEditorSitemap.url,
@@ -2155,11 +2307,9 @@ editorRouter.post(
   verifyUser,
   uploadImage(),
   parseRequestBody,
-  parseHTML,
   async (req, res) => {
     const {
       title,
-      content,
       htmlContent,
       headTitle,
       headKeyword,
@@ -2186,7 +2336,6 @@ editorRouter.post(
     try {
       const editorData = {
         title,
-        content,
         htmlContent,
         tags,
         categories, //: category ? category._id : null,
@@ -2212,7 +2361,13 @@ editorRouter.post(
 
         if (homeImagePath && homeFilename.startsWith("http")) {
           editorData.homeImagePath = homeFilename;
-          editorData.contentImagePath = contentFilename;
+          const regex = /src="(https:\/\/www\.youtube\.com\/embed\/[^"]+)"/;
+          const match = contentFilename.match(regex);
+
+          if (match && match[1]) {
+            const youtubeUrl = match[1];
+            editorData.contentImagePath = youtubeUrl;
+          }
         } else {
           editorData.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
         }
@@ -2238,6 +2393,101 @@ editorRouter.post(
       });
     } catch (err) {
       res.status(500).json({ message: err.message });
+    }
+  }
+);
+
+editorRouter.post(
+  "/draftEditor",
+  uploadImage(),
+  parseRequestBody,
+  verifyUser,
+  parseTags,
+  parseCategories,
+  async (req, res) => {
+    let {
+      title,
+      htmlContent,
+      tags,
+      categories,
+      headTitle,
+      headKeyword,
+      headDescription,
+      manualUrl,
+      altText,
+      scheduledAt,
+      draft,
+    } = res;
+    console.log("draft post");
+    const serialNumber = await getMaxSerialNumber();
+    let contentImagePath =
+      req.files.contentImagePath && req.files.contentImagePath[0];
+    let homeImagePath = req.files.homeImagePath && req.files.homeImagePath[0];
+    if (title === null) {
+      title = `[未命名標題草稿${serialNumber + 1}]`;
+    }
+    let message = "";
+    if (scheduledAt) {
+      message +=
+        "Scheduled time has been set and cannot be for draft articles.\n";
+    }
+    // if (draft !== true) {
+    //   message += "Non-draft articles.\n";
+    // }
+    if (message) {
+      res.status(400).send({ message });
+    } else {
+      try {
+        const editorData = {
+          serialNumber: serialNumber + 1,
+          title,
+          htmlContent,
+          tags,
+          categories, //: category ? category._id : null,
+          headTitle,
+          headKeyword,
+          headDescription,
+          manualUrl,
+          altText,
+          scheduledAt,
+          draft,
+        };
+
+        if (contentImagePath === undefined && homeImagePath === undefined) {
+          editorData.contentImagePath = null;
+          editorData.homeImagePath = null;
+        } else {
+          const contentFilename = contentImagePath
+            ? await processImage(
+                contentImagePath,
+                contentImagePath.originalname
+              )
+            : null;
+
+          const homeFilename = homeImagePath
+            ? await processImage(homeImagePath, homeImagePath.originalname)
+            : null;
+          if (homeImagePath && homeFilename.startsWith("http")) {
+            editorData.homeImagePath = homeFilename;
+            const regex = /src="(https:\/\/www\.youtube\.com\/embed\/[^"]+)"/;
+            const match = contentFilename.match(regex);
+
+            if (match && match[1]) {
+              const youtubeUrl = match[1];
+              editorData.contentImagePath = youtubeUrl;
+            }
+          } else {
+            editorData.homeImagePath = `${LOCAL_DOMAIN}home/saved_image/homepage/${contentFilename}`;
+            editorData.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
+          }
+        }
+        const newDraft = new draftEditor(editorData);
+        await newDraft.save();
+
+        res.status(201).json({ newDraft });
+      } catch (err) {
+        res.status(400).json({ message: err.message });
+      }
     }
   }
 );
@@ -2282,6 +2532,7 @@ editorRouter.delete(
       if (deleteEditor.deletedCount !== deleteSitemap.deletedCount) {
         return res.status(404).json({ message: "No matching sitemap found" });
       }
+      await scanAndDelete();
       res.status(200).json({ message: "Delete editor successful!" });
     } catch (e) {
       res.status(500).send({ message: e.message });
