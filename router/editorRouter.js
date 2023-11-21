@@ -2096,11 +2096,6 @@ editorRouter.patch(
     if (headDescription !== undefined)
       res.editor.headDescription = headDescription;
     if (altText !== undefined) res.editor.altText = altText;
-    if (topSorting !== undefined) res.editor.topSorting = topSorting;
-    if (popularSorting !== undefined)
-      res.editor.popularSorting = popularSorting;
-    if (recommendSorting !== undefined)
-      res.editor.recommendSorting = recommendSorting;
     if (hidden !== undefined) res.editor.hidden = hidden;
     if (scheduledAt !== undefined) res.editor.scheduledAt = scheduledAt;
     if (draft !== undefined) res.editor.draft = draft;
