@@ -2112,6 +2112,7 @@ editorRouter.patch(
       );
 
       await res.editor.save();
+      await scanAndDelete();
       res.status(201).send({ message: "Editor update successfully" });
     } catch (err) {
       res.status(400).send({ message: err.message });
