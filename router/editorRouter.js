@@ -2089,7 +2089,6 @@ editorRouter.patch(
     if (tags !== undefined) res.editor.tags = [...tags];
     if (categories !== undefined) res.editor.categories = categories;
     if (title !== undefined) res.editor.title = title;
-    if (content !== undefined) res.editor.content = content;
     if (htmlContent !== undefined) res.editor.htmlContent = htmlContent;
     if (headTitle !== undefined) res.editor.headTitle = headTitle;
     if (headKeyword !== undefined) res.editor.headKeyword = headKeyword;
