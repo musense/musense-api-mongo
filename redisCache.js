@@ -48,7 +48,7 @@ const scanAndDelete = async () => {
       "SCAN",
       cursor,
       "MATCH",
-      "editorList:limit:10000*",
+      "editorList:*",
       "COUNT",
       "100",
     ]);

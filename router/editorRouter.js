@@ -2086,6 +2086,7 @@ editorRouter.patch(
         { $set: { url: `${SUB_DOMAIN}p_${manualUrl}.html` } }
       );
     }
+
     if (tags !== undefined) res.editor.tags = [...tags];
     if (categories !== undefined) res.editor.categories = categories;
     if (title !== undefined) res.editor.title = title;
