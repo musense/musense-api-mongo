@@ -120,12 +120,22 @@ function parseRequestBody(req, res, next) {
         : hidden === null
         ? false
         : JSON.parse(hidden);
-    res.scheduledAt =
-      scheduledAt === undefined
-        ? undefined
-        : scheduledAt === null
-        ? null
-        : new Date(JSON.parse(scheduledAt));
+    if (scheduledAt === undefined) {
+      res.scheduledAt = undefined;
+    } else {
+      let parsedScheduledAt = JSON.parse(scheduledAt);
+
+      // 如果parsedScheduledAt是 {"scheduledAt": null}
+      if (
+        typeof parsedScheduledAt === "object" &&
+        parsedScheduledAt.scheduledAt === null
+      ) {
+        res.scheduledAt = null;
+      } else {
+        // 在其他情況下，假設 parsedScheduledAt 是一個可以被轉換為日期的值
+        res.scheduledAt = new Date(parsedScheduledAt);
+      }
+    }
     res.draft =
       draft === undefined
         ? undefined
@@ -143,10 +153,24 @@ function parseRequestBody(req, res, next) {
 }
 
 async function getMaxSerialNumber() {
-  const maxSerialNumberEditor = await Editor.findOne()
-    .sort({ serialNumber: -1 })
-    .select("-_id serialNumber");
-  return maxSerialNumberEditor ? maxSerialNumberEditor.serialNumber : 0;
+  const [maxSerialNumberEditor, maxSerialNumberDraftEditor] = await Promise.all(
+    [
+      Editor.findOne().sort({ serialNumber: -1 }).select("-_id serialNumber"),
+      draftEditor
+        .findOne()
+        .sort({ serialNumber: -1 })
+        .select("-_id serialNumber"),
+    ]
+  );
+
+  const maxEditorSerialNumber = maxSerialNumberEditor
+    ? maxSerialNumberEditor.serialNumber
+    : 0;
+  const maxDraftEditorSerialNumber = maxSerialNumberDraftEditor
+    ? maxSerialNumberDraftEditor.serialNumber
+    : 0;
+
+  return Math.max(maxEditorSerialNumber, maxDraftEditorSerialNumber);
 }
 
 async function parseCategories(req, res, next) {
@@ -1991,16 +2015,12 @@ editorRouter.patch(
             }
           }
         } else {
-          res.editor.homeImagePath = `${LOCAL_DOMAIN}saved_image/homepage/${contentFilename}`;
-          res.editor.contentImagePath = `${LOCAL_DOMAIN}saved_image/content/${contentFilename}`;
+          res.editor.homeImagePath = `${LOCAL_DOMAIN}home/saved_image/homepage/${contentFilename}`;
+          res.editor.contentImagePath = `${LOCAL_DOMAIN}home/saved_image/content/${contentFilename}`;
         }
       }
       if (manualUrl !== undefined) {
         res.editor.manualUrl = manualUrl;
-        await Sitemap.updateOne(
-          { originalID: res.editor._id, type: "editor" },
-          { $set: { url: `${domain}p_${manualUrl}.html` } }
-        );
       }
       if (tags !== undefined) res.editor.tags = [...tags];
       if (categories !== undefined) res.editor.categories = categories;
@@ -2014,7 +2034,8 @@ editorRouter.patch(
       if (draft !== undefined) res.editor.draft = draft;
       try {
         await res.editor.save();
-        res.status(200).send({ message: "Editor update successfully" });
+        await scanAndDelete();
+        res.status(200).send({ message: "Draft Editor update successfully" });
       } catch (err) {
         res.status(400).send({ message: err.message });
       }
@@ -2180,7 +2201,25 @@ editorRouter.post(
       draft,
     } = res;
 
-    const serialNumber = await getMaxSerialNumber();
+    let serialNumber = req.body.serialNumber;
+    if (!serialNumber) {
+      serialNumber = (await getMaxSerialNumber()) + 1;
+    } else {
+      try {
+        //Delete draft articles to avoid data duplication.
+        let deleteDraftEditor = await draftEditor.deleteOne({
+          serialNumber: serialNumber,
+        });
+        if (!deleteDraftEditor) {
+          return res
+            .status(404)
+            .json({ message: "No matching draftEditor found" });
+        }
+      } catch (err) {
+        res.status(500).send({ message: err.message });
+      }
+    }
+
     let contentImagePath =
       req.files.contentImagePath && req.files.contentImagePath[0];
     let homeImagePath = req.files.homeImagePath && req.files.homeImagePath[0];
@@ -2203,7 +2242,7 @@ editorRouter.post(
     } else {
       try {
         const editorData = {
-          serialNumber: serialNumber + 1,
+          serialNumber: serialNumber,
           title,
           htmlContent,
           tags,
@@ -2243,6 +2282,8 @@ editorRouter.post(
             if (match && match[1]) {
               const youtubeUrl = match[1];
               editorData.contentImagePath = youtubeUrl;
+            } else {
+              editorData.contentImagePath = contentFilename;
             }
           } else {
             editorData.homeImagePath = `${LOCAL_DOMAIN}home/saved_image/homepage/${contentFilename}`;
@@ -2334,7 +2375,7 @@ editorRouter.post(
         title,
         htmlContent,
         tags,
-        categories, //: category ? category._id : null,
+        categories,
         headTitle,
         headKeyword,
         headDescription,
@@ -2414,7 +2455,6 @@ editorRouter.post(
       scheduledAt,
       draft,
     } = res;
-    console.log("draft post");
     const serialNumber = await getMaxSerialNumber();
     let contentImagePath =
       req.files.contentImagePath && req.files.contentImagePath[0];
@@ -2427,9 +2467,6 @@ editorRouter.post(
       message +=
         "Scheduled time has been set and cannot be for draft articles.\n";
     }
-    // if (draft !== true) {
-    //   message += "Non-draft articles.\n";
-    // }
     if (message) {
       res.status(400).send({ message });
     } else {
@@ -2439,7 +2476,7 @@ editorRouter.post(
           title,
           htmlContent,
           tags,
-          categories, //: category ? category._id : null,
+          categories,
           headTitle,
           headKeyword,
           headDescription,
@@ -2479,7 +2516,7 @@ editorRouter.post(
         }
         const newDraft = new draftEditor(editorData);
         await newDraft.save();
-
+        await scanAndDelete();
         res.status(201).json({ newDraft });
       } catch (err) {
         res.status(400).json({ message: err.message });
@@ -2560,6 +2597,21 @@ editorRouter.delete("/tempEditor", async (req, res) => {
     }
     await tempEditor.deleteMany({});
     res.status(200).send("Files were deleted successfully");
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
+editorRouter.delete("/draftEditor", verifyUser, async (req, res) => {
+  const deleteNumber = req.body.id;
+  try {
+    let deleteEditor = await draftEditor.deleteOne({
+      _id: deleteNumber,
+    });
+    if (deleteEditor.deletedCount === 0) {
+      return res.status(404).json({ message: "No matching draftEditor found" });
+    }
+    res.status(201).json({ message: "Delete draftEditor successful!" });
   } catch (err) {
     res.status(500).send({ message: err.message });
   }
