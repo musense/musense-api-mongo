@@ -738,7 +738,7 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
     let end;
     // Try to get data from cache
     const generateCacheKey = (query) => {
-      let objectTypeString = "editorList";
+      let objectTypeString = "musense editorList";
       for (const [key, value] of Object.entries(query)) {
         objectTypeString += `:${key}:${value}`;
       }
