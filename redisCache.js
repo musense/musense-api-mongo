@@ -48,7 +48,7 @@ const scanAndDelete = async () => {
       "SCAN",
       cursor,
       "MATCH",
-      "editorList:*",
+      "musense:editorList:*",
       "COUNT",
       "100",
     ]);

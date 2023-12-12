@@ -738,7 +738,8 @@ editorRouter.get("/editor", verifyUser, parseQuery, async (req, res) => {
     let end;
     // Try to get data from cache
     const generateCacheKey = (query) => {
-      let objectTypeString = "musense editorList";
+      //避免UAT與其他專案衝突
+      let objectTypeString = "musense:editorList";
       for (const [key, value] of Object.entries(query)) {
         objectTypeString += `:${key}:${value}`;
       }
@@ -2611,6 +2612,7 @@ editorRouter.delete("/draftEditor", verifyUser, async (req, res) => {
     if (deleteEditor.deletedCount === 0) {
       return res.status(404).json({ message: "No matching draftEditor found" });
     }
+    await scanAndDelete();
     res.status(201).json({ message: "Delete draftEditor successful!" });
   } catch (err) {
     res.status(500).send({ message: err.message });
